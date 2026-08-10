@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import getpass
 import sys
+import webbrowser
 from pathlib import Path
 
 from .insights import by_category, roll_up
@@ -24,6 +25,7 @@ from .parsers import (
     supported_suffixes,
 )
 from .reconcile import is_tautological, reconcile, reconcile_card
+from .report import render
 
 MAX_PASSWORD_ATTEMPTS = 3
 
@@ -70,6 +72,20 @@ def main(argv: list[str] | None = None) -> int:
         parents=[common],
         help="recurring charges, possible duplicates, and refunds that arrived",
     )
+    report = subcommands.add_parser(
+        "report",
+        parents=[common],
+        help="write a self-contained HTML page: what reconciled, what is still open",
+    )
+    report.add_argument(
+        "--out",
+        type=Path,
+        default=Path("moneytrail-report.html"),
+        help="where to write the page (default moneytrail-report.html)",
+    )
+    report.add_argument(
+        "--open", action="store_true", dest="open_it", help="open it when done"
+    )
     subcommands.add_parser(
         "spend",
         parents=[common],
@@ -93,9 +109,48 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.command == "review":
         return _review(args.paths, args.password, prompt=prompt)
+    if args.command == "report":
+        return _report(
+            args.paths, args.password, prompt=prompt, out=args.out, open_it=args.open_it
+        )
     if args.command == "spend":
         return _spend(args.paths, args.password, prompt=prompt)
     return 2
+
+
+def _report(
+    paths: list[Path],
+    password: str | None = None,
+    *,
+    prompt: bool = True,
+    out: Path = Path("moneytrail-report.html"),
+    open_it: bool = False,
+) -> int:
+    targets = _expand(paths)
+    if not targets:
+        listed = ", ".join(sorted(supported_suffixes()))
+        print(f"nothing to read -- no {listed} files found in those paths")
+        return 2
+
+    statements = []
+    failures = 0
+    for path in targets:
+        statement = _load(path, password, prompt=prompt)
+        if statement is None:
+            failures += 1
+        else:
+            statements.append(statement)
+
+    if not statements:
+        return 1
+
+    out.write_text(render(statements), encoding="utf-8")
+    print(f"wrote {out.resolve()} from {len(statements)} statement(s)")
+    print("  it contains your financial data -- *.html is gitignored for that reason")
+    if open_it:
+        webbrowser.open(out.resolve().as_uri())
+
+    return 1 if failures else 0
 
 
 def _review(paths: list[Path], password: str | None = None, *, prompt: bool = True) -> int:

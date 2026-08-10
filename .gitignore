@@ -10,6 +10,8 @@
 /statements/
 *.db
 *.sqlite3
+# Generated reports contain the same data the statements do.
+*.html
 
 # ...except the synthetic fixtures, which contain no real account data.
 !tests/fixtures/*.csv

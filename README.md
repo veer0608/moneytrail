@@ -259,12 +259,39 @@ Card repayments and inter-account transfers turned out to be the same
 operation — find the credit on another document that this debit produced — so
 they share one matcher rather than two that can drift apart.
 
+### The trust strip
+
+```bash
+python -m moneytrail report statements/ --open
+```
+
+Writes one self-contained HTML file. Deliberately a file, not a server: no
+ports, no build step, and no network of any kind — there is a test asserting the
+page contains no `http`, no `<script>`, no `src=` and no `@import`, so the "your
+data never leaves the machine" claim is checkable by reading the output.
+
+The layout is an argument about what matters:
+
+1. **Was every statement read correctly?** One tile per statement — green if it
+   reconciled to the paisa, amber if it reconciled only against figures taken
+   from its own rows, red with the row locator and the exact delta if it failed.
+   *No other finance tool tells you this*, and every number below it is
+   worthless if the answer is no.
+2. **Open loops** — duplicate charges never refunded, card bills paid with no
+   card statement covering them, card payments no supplied account explains.
+3. **Recurring** — active and stopped, with the annual cost.
+4. **Where it went** — the category breakdown, last and smallest, because it is
+   the part every other app already has.
+
+Generated reports contain everything the statements do, so `*.html` is
+gitignored and the command says so each time it runs.
+
 ## Roadmap
 
 | phase | what |
 |---|---|
-| 5 | The trust strip — a page showing every statement-month as reconciled or failed, then open loops, with the category breakdown last and smallest |
 | 6 | Natural-language query layer over the ledger, every answer traced back to the rows it came from |
+| — | Grow the parser against real statements from other banks; every format so far has broken it in a new way |
 
 ### The number to report
 
