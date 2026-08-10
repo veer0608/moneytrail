@@ -11,14 +11,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..models import Statement
-from .base import (
-    PasswordRequired,
-    StatementParser,
-    UnparseableStatement,
-    find_account_hint,
-)
-from .table import RawRow, build_statement, clean_cell, detect_bank, find_header, is_header
+from ..models import CardStatement, Statement
+from .base import PasswordRequired, StatementParser, UnparseableStatement
+from .build import build
+from .table import RawRow, clean_cell, find_header, is_header
 
 #: Ruled tables first -- exact when the bank draws borders.
 LINE_SETTINGS = {"vertical_strategy": "lines", "horizontal_strategy": "lines"}
@@ -41,7 +37,9 @@ class PdfStatementParser(StatementParser):
     def sniff(self, path: Path) -> bool:
         return path.suffix.lower() in self.suffixes
 
-    def parse(self, path: Path, *, password: str | None = None) -> Statement:
+    def parse(
+        self, path: Path, *, password: str | None = None
+    ) -> Statement | CardStatement:
         pdfplumber = _import_pdfplumber()
 
         try:
@@ -59,10 +57,8 @@ class PdfStatementParser(StatementParser):
                 if found is None:
                     continue
                 header_index, columns = found
-                return build_statement(
+                return build(
                     source=path,
-                    bank=detect_bank(preamble, path),
-                    account_hint=find_account_hint(preamble),
                     columns=columns,
                     # The header repeats on every page of a multi-page table.
                     rows=[
@@ -70,6 +66,8 @@ class PdfStatementParser(StatementParser):
                         for row in rows[header_index + 1 :]
                         if is_header(row.cells) is None
                     ],
+                    grid=rows,
+                    preamble=preamble,
                 )
 
         raise UnparseableStatement(

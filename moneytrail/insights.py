@@ -13,7 +13,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 
 from .merchants import MerchantMatch, build_vocabulary, identify
-from .models import Direction, Statement
+from .models import CardStatement, Direction, Statement
 from .money import Paise
 
 
@@ -71,7 +71,8 @@ class MerchantRollup:
         return tuple(match for match in self.matches if not match.classified)
 
 
-def roll_up(statement: Statement) -> MerchantRollup:
+def roll_up(statement: Statement | CardStatement) -> MerchantRollup:
+    """Works on either kind of statement -- both just carry transactions."""
     narrations = [txn.narration for txn in statement.transactions]
     vocabulary = build_vocabulary(narrations)
     matches = [identify(narration, vocabulary) for narration in narrations]

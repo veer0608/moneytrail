@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 from .insights import by_category, roll_up
-from .models import Statement
+from .models import CardStatement, Statement
 from .money import format_paise
 from .parsers import (
     NoParserFound,
@@ -21,7 +21,7 @@ from .parsers import (
     parse_statement,
     supported_suffixes,
 )
-from .reconcile import is_tautological, reconcile
+from .reconcile import is_tautological, reconcile, reconcile_card
 
 MAX_PASSWORD_ATTEMPTS = 3
 
@@ -105,7 +105,9 @@ def _merchants(
     return 1 if failures else 0
 
 
-def _merchant_report(statement: Statement, *, top: int, unmatched: bool) -> str:
+def _merchant_report(
+    statement: Statement | CardStatement, *, top: int, unmatched: bool
+) -> str:
     rollup = roll_up(statement)
     lines = [f"{statement.source}  --  {rollup.transactions} transactions", ""]
 
@@ -183,13 +185,17 @@ def _check(
             failures += 1
             continue
 
-        result = reconcile(statement)
-        print(result.report())
-        if is_tautological(statement):
-            print(
-                "  note: both endpoints were derived from the rows, so the first and "
-                "last row are not independently checked"
-            )
+        if isinstance(statement, CardStatement):
+            result = reconcile_card(statement)
+            print(result.report())
+        else:
+            result = reconcile(statement)
+            print(result.report())
+            if is_tautological(statement):
+                print(
+                    "  note: both endpoints were derived from the rows, so the first "
+                    "and last row are not independently checked"
+                )
         print()
         if not result.ok:
             failures += 1
@@ -200,7 +206,7 @@ def _check(
 
 def _load(
     path: Path, password: str | None, *, prompt: bool = True, attempt: int = 1
-) -> Statement | None:
+) -> Statement | CardStatement | None:
     """Parse one file, reporting any failure rather than raising it."""
     try:
         return parse_statement(path, password=password)

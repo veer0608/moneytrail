@@ -35,6 +35,7 @@ NARRATION_ALIASES = (
     "remarks",
     "details",
     "transaction details",
+    "transaction description",
 )
 DEBIT_ALIASES = (
     "withdrawal amt",

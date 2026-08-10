@@ -14,9 +14,10 @@ from __future__ import annotations
 from datetime import date, datetime, time
 from pathlib import Path
 
-from ..models import Statement
-from .base import StatementParser, UnparseableStatement, find_account_hint
-from .table import RawRow, build_statement, detect_bank, find_header, is_header
+from ..models import CardStatement, Statement
+from .base import StatementParser, UnparseableStatement
+from .build import build
+from .table import RawRow, find_header, is_header
 
 _ZIP_MAGIC = b"PK\x03\x04"
 _OLE2_MAGIC = bytes.fromhex("d0cf11e0a1b11ae1")
@@ -46,7 +47,9 @@ class XlsxStatementParser(StatementParser):
         # of the file falling through to a bare "no parser recognised".
         return magic[:4] == _ZIP_MAGIC or magic == _OLE2_MAGIC
 
-    def parse(self, path: Path, *, password: str | None = None) -> Statement:
+    def parse(
+        self, path: Path, *, password: str | None = None
+    ) -> Statement | CardStatement:
         _reject_legacy_format(path)
         openpyxl = _import_openpyxl()
 
@@ -72,18 +75,20 @@ class XlsxStatementParser(StatementParser):
                     if found is None:
                         continue
                     header_index, columns = found
-                    preamble = [" ".join(cells) for cells in grid[:header_index]]
-                    rows = [
-                        RawRow(number=header_index + 1 + offset, cells=cells)
-                        for offset, cells in enumerate(grid[header_index + 1 :], start=1)
-                        if is_header(cells) is None
+                    numbered = [
+                        RawRow(number=index + 1, cells=cells)
+                        for index, cells in enumerate(grid)
                     ]
-                    return build_statement(
+                    return build(
                         source=path,
-                        bank=detect_bank(preamble, path),
-                        account_hint=find_account_hint(preamble),
                         columns=columns,
-                        rows=rows,
+                        rows=[
+                            row
+                            for row in numbered[header_index + 1 :]
+                            if is_header(row.cells) is None
+                        ],
+                        grid=numbered,
+                        preamble=[" ".join(cells) for cells in grid[:header_index]],
                     )
             finally:
                 workbook.close()

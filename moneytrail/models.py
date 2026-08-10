@@ -65,3 +65,50 @@ class Statement:
     @property
     def rows_with_balance(self) -> int:
         return sum(1 for txn in self.transactions if txn.balance is not None)
+
+
+@dataclass(frozen=True)
+class CardSummary:
+    """The box a credit-card statement prints its own totals in.
+
+    Every field is optional because issuers print different subsets, and a
+    missing figure must mean "not checkable" rather than zero.
+    """
+
+    previous_balance: Paise | None = None
+    payments: Paise | None = None
+    purchases: Paise | None = None
+    fees: Paise | None = None
+    total_due: Paise | None = None
+    minimum_due: Paise | None = None
+    due_date: date | None = None
+
+    @property
+    def stated_debits(self) -> Paise | None:
+        """Purchases plus finance charges: what the rows should add up to."""
+        if self.purchases is None:
+            return None
+        return self.purchases + (self.fees or 0)
+
+
+@dataclass(frozen=True)
+class CardStatement:
+    """A credit-card statement.
+
+    Transactions reuse :class:`Transaction` (with no running balance) so
+    everything built on a ledger -- merchant rollups especially -- works here
+    unchanged. That matters: card purchases are the merchant-heavy data a bank
+    statement does not contain.
+    """
+
+    source: Path
+    issuer: str
+    account_hint: str
+    summary: CardSummary
+    transactions: tuple[Transaction, ...]
+    period_start: date | None = None
+    period_end: date | None = None
+
+    @property
+    def rows_with_balance(self) -> int:
+        return 0

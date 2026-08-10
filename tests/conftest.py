@@ -45,6 +45,12 @@ def spreadsheet_path() -> Path:
 
 
 @pytest.fixture
+def card_path() -> Path:
+    """A credit-card statement: summary box, no running balance, Cr suffixes."""
+    return FIXTURES / "hdfc_card_july_2025.csv"
+
+
+@pytest.fixture
 def fixture_password() -> str:
     """Unlocks a synthetic fixture and nothing else."""
     return "test1234"

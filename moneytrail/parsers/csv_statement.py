@@ -10,9 +10,10 @@ import csv
 import io
 from pathlib import Path
 
-from ..models import Statement
-from .base import StatementParser, UnparseableStatement, find_account_hint
-from .table import RawRow, build_statement, detect_bank, find_header
+from ..models import CardStatement, Statement
+from .base import StatementParser, UnparseableStatement
+from .build import build
+from .table import RawRow, find_header
 
 
 class CsvStatementParser(StatementParser):
@@ -28,27 +29,24 @@ class CsvStatementParser(StatementParser):
             return False
         return find_header(rows) is not None
 
-    def parse(self, path: Path, *, password: str | None = None) -> Statement:
+    def parse(
+        self, path: Path, *, password: str | None = None
+    ) -> Statement | CardStatement:
         rows = _read_rows(path)
         found = find_header(rows)
         if found is None:
             raise UnparseableStatement(f"no recognisable header row in {path}")
         header_index, columns = found
 
-        preamble = [" ".join(row) for row in rows[:header_index]]
         # Row numbers are 1-based source lines, so a failure report points at a
         # line the user can open the file to.
-        raw = [
-            RawRow(number=header_index + 1 + offset, cells=cells)
-            for offset, cells in enumerate(rows[header_index + 1 :], start=1)
-        ]
-
-        return build_statement(
+        grid = [RawRow(number=index + 1, cells=cells) for index, cells in enumerate(rows)]
+        return build(
             source=path,
-            bank=detect_bank(preamble, path),
-            account_hint=find_account_hint(preamble),
             columns=columns,
-            rows=raw,
+            rows=grid[header_index + 1 :],
+            grid=grid,
+            preamble=[" ".join(row) for row in rows[:header_index]],
         )
 
 

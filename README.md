@@ -111,7 +111,27 @@ python -m pytest
   need OCR first.
 - **Spreadsheets**, including the very common case of an OOXML workbook shipped
   under an `.xls` name. Magic bytes decide the format, never the extension.
+- **Credit-card statements**, detected from content rather than filename.
 - The reconciliation gate and the CLI.
+
+### Cards reconcile differently
+
+A card statement has no running balance, so there is no chain to walk. What it
+does publish is a summary box, and that box is the ground truth:
+
+| check | what it proves |
+|---|---|
+| `summary` | `previous − payments + purchases + fees == total due` — the issuer's own arithmetic |
+| `rows-debit` / `rows-credit` | the transaction rows this parse recovered sum to the totals the box states — the only check that says the ledger is *complete* |
+
+A statement that prints no totals is reported `UNVERIFIED` rather than passing
+quietly. And the sign convention inverts: on a card, `Cr` is money coming off
+what you owe, the opposite of a bank statement's credit column — reading the
+bank convention there would flip the entire ledger.
+
+Card transactions reuse the same `Transaction` type, so the merchant rollup
+works on them unchanged. That matters, because the card statement is where the
+merchant spend actually is.
 
 All three formats go through one code path: a parser's only job is to recover a
 grid, and `parsers/table.py` turns rows into a statement. The test suite parses
@@ -163,6 +183,7 @@ CRED is a card-bill platform, not a fee.
 
 | phase | what |
 |---|---|
+| 3a | Match bank-side card repayments to card-side payments, so settling a card bill is not counted as spending on top of the purchases it settles |
 | 3 | The actual questions: refund matching (debit → expected credit within *n* days, flag the ones that never closed), duplicate-charge detection, recurring-charge detection |
 | 4 | Natural-language query layer over the ledger, every answer traced back to the rows it came from |
 | 5 | Multi-account merge, with inter-account transfer detection so moving your own money is not counted as income *and* expense |
