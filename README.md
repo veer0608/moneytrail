@@ -286,11 +286,47 @@ The layout is an argument about what matters:
 Generated reports contain everything the statements do, so `*.html` is
 gitignored and the command says so each time it runs.
 
+### Asking it things
+
+```bash
+python -m moneytrail ask "how much did I spend on rent in March" statements/
+```
+
+```
+  ₹28,000.00 spent on rent in March 2025, across 1 transaction
+
+  filters   direction=debit, category=rent, period=March 2025
+  evidence  1 row
+    2025-03-12     ₹28,000.00  Housing Rent Shobha A… ACH D- HOUSING RENT SHOBHA APARTMENTS
+```
+
+**No model runs here, and that is the design rather than a shortcut.** A
+language model asked to read a ledger and report a total can produce a
+confident, plausible, wrong number, and nothing in the output would show it.
+Questions are parsed into a structured query; the arithmetic is done by code;
+every answer arrives carrying the rows it came from.
+
+That also leaves the right seam for a model later — let it translate English
+into one of these queries, and keep the engine computing the number. The model
+picks what to ask; it never gets to decide what the answer is.
+
+Three consequences worth pointing at:
+
+- **It refuses rather than answering a different question.** Ask about a
+  merchant these statements have never seen and it says so. An earlier version
+  silently dropped the unknown name and returned the total for *everything* that
+  month — the exact failure this project exists to prevent, caught by a test.
+- **Relative dates resolve against the ledger, not against today.** A statement
+  ending in May answers "last month" as April forever, so the same question
+  cannot drift into a different answer over time.
+- **What it cannot do, it says.** Ask whether a refund arrived and never got
+  one, and the answer notes that a refund you were owed but never issued leaves
+  no trace in a statement.
+
 ## Roadmap
 
 | phase | what |
 |---|---|
-| 6 | Natural-language query layer over the ledger, every answer traced back to the rows it came from |
 | — | Grow the parser against real statements from other banks; every format so far has broken it in a new way |
 
 ### The number to report

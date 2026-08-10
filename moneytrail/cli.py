@@ -17,6 +17,7 @@ from .linking import find_transfers, link_card_repayments, summarise_spend
 from .models import CardStatement, Statement
 from .money import format_paise
 from .patterns import find_duplicates, find_recurring, find_refunds
+from .query import ask, build_ledger, plural
 from .parsers import (
     NoParserFound,
     PasswordRequired,
@@ -34,20 +35,31 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="moneytrail")
     subcommands = parser.add_subparsers(dest="command", required=True)
 
-    common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("paths", nargs="+", type=Path)
-    common.add_argument(
+    credentials = argparse.ArgumentParser(add_help=False)
+    credentials.add_argument(
         "--password",
         help=(
             "password for encrypted PDFs. Prefer leaving this off -- you will be "
             "prompted without echo, which keeps it out of your shell history"
         ),
     )
-    common.add_argument(
+    credentials.add_argument(
         "--no-prompt",
         action="store_true",
         help="never ask for a password; report locked files and carry on (for CI)",
     )
+
+    common = argparse.ArgumentParser(add_help=False, parents=[credentials])
+    common.add_argument("paths", nargs="+", type=Path)
+
+    # `ask` puts the question first, so it needs paths after rather than before.
+    ask_command = subcommands.add_parser(
+        "ask",
+        parents=[credentials],
+        help='ask the ledger a question, e.g. "how much did I spend on food in March"',
+    )
+    ask_command.add_argument("question")
+    ask_command.add_argument("paths", nargs="+", type=Path)
 
     subcommands.add_parser(
         "check",
@@ -115,7 +127,71 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.command == "spend":
         return _spend(args.paths, args.password, prompt=prompt)
+    if args.command == "ask":
+        return _ask(args.question, args.paths, args.password, prompt=prompt)
     return 2
+
+
+def _ask(
+    question: str,
+    paths: list[Path],
+    password: str | None = None,
+    *,
+    prompt: bool = True,
+    show: int = 10,
+) -> int:
+    statements, failures = _load_all(paths, password, prompt=prompt)
+    if statements is None:
+        return 2
+    if not statements:
+        return 1
+
+    answer = ask(question, build_ledger(statements))
+
+    print(f"> {answer.question}")
+    print()
+    print(f"  {answer.headline}")
+    print()
+    if answer.filters:
+        print(f"  filters   {', '.join(answer.filters)}")
+    if answer.rows:
+        # The rows are the point: an answer you cannot check is worth nothing.
+        print(f"  evidence  {plural(answer.evidence, 'row')}")
+        for row in answer.rows[:show]:
+            txn = row.transaction
+            print(
+                f"    {txn.date}  {format_paise(txn.amount):>13}  "
+                f"{_clip(row.match.name, 22):<22} {_clip(txn.narration, 44)}"
+            )
+        if answer.evidence > show:
+            print(f"    ... and {answer.evidence - show} more")
+    for caveat in answer.caveats:
+        print(f"  note: {caveat}")
+
+    if failures:
+        return 1
+    return 0 if answer.understood else 2
+
+
+def _load_all(
+    paths: list[Path], password: str | None, *, prompt: bool
+) -> tuple[list | None, int]:
+    """Load every statement in `paths`; None means there was nothing to read."""
+    targets = _expand(paths)
+    if not targets:
+        listed = ", ".join(sorted(supported_suffixes()))
+        print(f"nothing to read -- no {listed} files found in those paths")
+        return None, 0
+
+    statements = []
+    failures = 0
+    for path in targets:
+        statement = _load(path, password, prompt=prompt)
+        if statement is None:
+            failures += 1
+        else:
+            statements.append(statement)
+    return statements, failures
 
 
 def _report(
