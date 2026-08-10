@@ -86,7 +86,8 @@ python -m moneytrail check path/to/statement.csv
 python -m moneytrail check path/to/a/folder
 
 python -m moneytrail merchants statements/
-python -m moneytrail merchants statements/ --unmatched
+python -m moneytrail review statements/
+python -m moneytrail spend statements/
 ```
 
 Encrypted PDFs prompt for a password without echoing it, so it stays out of
@@ -203,11 +204,41 @@ repayments rather than burying the assumption. Card payments with no matching
 bank debit are reported too: they were settled from an account you did not
 supply.
 
+### The questions
+
+`moneytrail review` reports three things, and is careful about which:
+
+```
+  recurring charges
+    Housing Rent Shobha Apartme… monthly    ₹28,000.00  ₹3,40,666.67 /yr  last 2025-05-12  active
+    Netflix                      monthly       ₹649.00      ₹7,896.17 /yr  last 2025-05-05  active
+    Spotify                      monthly       ₹119.00      ₹1,447.83 /yr  last 2025-03-07  stopped
+
+  possible duplicate charges
+    2025-03-18  Swiggy      ₹450.00 x2  none refunded, ₹450.00 still out
+    2025-02-10  Amazon    ₹1,299.00 x2  1 refunded, ₹0.00 still out
+
+  refunds that arrived
+    2025-02-20  Amazon    ₹1,299.00  10 days after the 2025-02-10 charge
+    2025-04-27  Myntra    ₹2,499.00  12 days after the 2025-04-15 charge
+```
+
+- **Cadence is measured, not assumed.** Three charges at irregular gaps are a
+  habit, not a subscription, and are not reported as one. Amounts that swing
+  wildly disqualify a run too. Monthly rent qualifies — a cadence detector that
+  only found streaming services would be missing the expensive half.
+- **Duplicates are candidates, not verdicts.** Buying the same coffee twice
+  looks identical to being charged twice, so each one is reported with its span
+  and how much is still outstanding after any refund, and you judge.
+- **Refunds that never arrived cannot be found.** Nothing in a statement records
+  that you asked for one. The report says so rather than implying the absence of
+  a finding means nothing is owed to you.
+
 | phase | what |
-|---|---|
-| 3 | The actual questions: refund matching (debit → expected credit within *n* days, flag the ones that never closed), duplicate-charge detection, recurring-charge detection |
-| 4 | Natural-language query layer over the ledger, every answer traced back to the rows it came from |
-| 5 | Multi-account merge, with inter-account transfer detection so moving your own money is not counted as income *and* expense |
+|---|---|: refund matching (debit → expected credit within *n* days, flag the ones that never closed), duplicate-charge detection, recurring-charge detection |
+| 4 | Multi-account merge, with inter-account transfer detection so moving your own money is not counted as income *and* expense |
+| 5 | The trust strip — a page showing every statement-month as reconciled or failed, then open loops, with the category breakdown last and smallest |
+| 6 | Natural-language query layer over the ledger, every answer traced back to the rows it came from |
 
 ### The number to report
 

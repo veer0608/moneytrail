@@ -15,6 +15,7 @@ from .insights import by_category, roll_up
 from .linking import link_card_repayments, summarise_spend
 from .models import CardStatement, Statement
 from .money import format_paise
+from .patterns import find_duplicates, find_recurring, find_refunds
 from .parsers import (
     NoParserFound,
     PasswordRequired,
@@ -65,6 +66,11 @@ def main(argv: list[str] | None = None) -> int:
         help="list the narrations that did not resolve confidently",
     )
     subcommands.add_parser(
+        "review",
+        parents=[common],
+        help="recurring charges, possible duplicates, and refunds that arrived",
+    )
+    subcommands.add_parser(
         "spend",
         parents=[common],
         help=(
@@ -85,9 +91,88 @@ def main(argv: list[str] | None = None) -> int:
             top=args.top,
             unmatched=args.unmatched,
         )
+    if args.command == "review":
+        return _review(args.paths, args.password, prompt=prompt)
     if args.command == "spend":
         return _spend(args.paths, args.password, prompt=prompt)
     return 2
+
+
+def _review(paths: list[Path], password: str | None = None, *, prompt: bool = True) -> int:
+    targets = _expand(paths)
+    if not targets:
+        listed = ", ".join(sorted(supported_suffixes()))
+        print(f"nothing to read -- no {listed} files found in those paths")
+        return 2
+
+    failures = 0
+    for path in targets:
+        statement = _load(path, password, prompt=prompt)
+        if statement is None:
+            failures += 1
+            continue
+        print(_review_report(statement))
+        print()
+
+    return 1 if failures else 0
+
+
+def _review_report(statement: Statement | CardStatement) -> str:
+    lines = [str(statement.source), ""]
+
+    recurring = find_recurring(statement)
+    lines.append("  recurring charges")
+    if not recurring:
+        lines.append("    none found -- a cadence needs at least three charges")
+    for item in recurring:
+        status = "active" if item.active else "stopped"
+        lines.append(
+            f"    {_clip(item.merchant, 28):<28} {item.cadence:<11}"
+            f"{format_paise(item.typical_amount):>13}"
+            f"{format_paise(item.annualised):>15} /yr   "
+            f"last {item.last_seen}  {status}"
+        )
+
+    lines.append("")
+    duplicates = find_duplicates(statement)
+    lines.append("  possible duplicate charges")
+    if not duplicates:
+        lines.append("    none found")
+    for dup in duplicates:
+        when = (
+            f"{dup.charges[0].date}"
+            if dup.span_days == 0
+            else f"{dup.charges[0].date} to {dup.charges[-1].date}"
+        )
+        settled = (
+            "none refunded"
+            if not dup.refunded
+            else f"{dup.refunded} refunded"
+        )
+        lines.append(
+            f"    {when}  {_clip(dup.merchant, 24):<24} "
+            f"{format_paise(dup.amount):>12} x{dup.count}  "
+            f"{settled}, {format_paise(dup.exposure)} still out"
+        )
+
+    lines.append("")
+    refunds = find_refunds(statement)
+    lines.append("  refunds that arrived")
+    if not refunds:
+        lines.append("    none found")
+    for loop in refunds:
+        lines.append(
+            f"    {loop.refund.date}  {_clip(loop.merchant, 24):<24} "
+            f"{format_paise(loop.amount):>12}  "
+            f"{loop.lag_days} days after the {loop.charge.date} charge"
+        )
+
+    lines.append("")
+    lines.append(
+        "  note: a refund you were owed but never received cannot be detected -- "
+        "nothing in a statement records that you asked for one"
+    )
+    return "\n".join(lines)
 
 
 def _spend(paths: list[Path], password: str | None = None, *, prompt: bool = True) -> int:
