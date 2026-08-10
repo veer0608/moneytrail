@@ -60,6 +60,17 @@ def test_directory_checks_every_statement_inside(capsys):
     assert "hdfc_april_2025.pdf" in out
 
 
+def test_a_file_named_twice_is_only_loaded_once(patterns_path, capsys):
+    # Naming a folder and a file inside it used to load that statement twice
+    # and double every total it contributed to.
+    main(["ask", "how much did i spend on netflix",
+          str(patterns_path), str(patterns_path)])
+
+    out = capsys.readouterr().out
+    assert "5 transactions" in out  # five monthly charges, not ten
+    assert "₹3,245.00" in out
+
+
 def test_locked_pdf_is_reported_not_raised(locked_pdf_path, capsys):
     # Non-interactive, so there is no prompt to fall back to.
     assert main(["check", str(locked_pdf_path)]) == 1

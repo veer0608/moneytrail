@@ -191,7 +191,9 @@ def _match(
     if category == UNCATEGORISED and kind in _KIND_CATEGORIES:
         category = _KIND_CATEGORIES[kind]
     return MerchantMatch(
-        name=name.strip() or narration.raw,
+        # Never an empty name: an empty string is a substring of every question,
+        # so it would match anything asked of the ledger.
+        name=name.strip() or narration.raw.strip() or "(no narration)",
         category=category,
         channel=narration.channel,
         source=source,

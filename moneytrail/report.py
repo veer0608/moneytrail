@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from html import escape
 from typing import Sequence
 
-from .insights import by_category, roll_up
+from .insights import roll_up
 from .linking import find_transfers, link_card_repayments, summarise_spend
 from .models import CardStatement, Statement
 from .money import Paise, format_paise
@@ -219,9 +219,10 @@ def _categories(statements: Sequence[Statement | CardStatement]) -> str:
     debits: Counter = Counter()
     counts: Counter = Counter()
     for statement in statements:
-        for category, out, _, count in by_category(roll_up(statement)):
-            debits[category] += out
-            counts[category] += count
+        for entry in roll_up(statement).entries:
+            debits[entry.category] += entry.debits
+            # Outflow count only: a refund is not an occasion you spent money.
+            counts[entry.category] += entry.debit_count
     if not debits:
         return ""
 

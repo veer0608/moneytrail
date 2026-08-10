@@ -202,21 +202,9 @@ def _report(
     out: Path = Path("moneytrail-report.html"),
     open_it: bool = False,
 ) -> int:
-    targets = _expand(paths)
-    if not targets:
-        listed = ", ".join(sorted(supported_suffixes()))
-        print(f"nothing to read -- no {listed} files found in those paths")
+    statements, failures = _load_all(paths, password, prompt=prompt)
+    if statements is None:
         return 2
-
-    statements = []
-    failures = 0
-    for path in targets:
-        statement = _load(path, password, prompt=prompt)
-        if statement is None:
-            failures += 1
-        else:
-            statements.append(statement)
-
     if not statements:
         return 1
 
@@ -230,18 +218,11 @@ def _report(
 
 
 def _review(paths: list[Path], password: str | None = None, *, prompt: bool = True) -> int:
-    targets = _expand(paths)
-    if not targets:
-        listed = ", ".join(sorted(supported_suffixes()))
-        print(f"nothing to read -- no {listed} files found in those paths")
+    statements, failures = _load_all(paths, password, prompt=prompt)
+    if statements is None:
         return 2
 
-    failures = 0
-    for path in targets:
-        statement = _load(path, password, prompt=prompt)
-        if statement is None:
-            failures += 1
-            continue
+    for statement in statements:
         print(_review_report(statement))
         print()
 
@@ -307,26 +288,14 @@ def _review_report(statement: Statement | CardStatement) -> str:
 
 
 def _spend(paths: list[Path], password: str | None = None, *, prompt: bool = True) -> int:
-    targets = _expand(paths)
-    if not targets:
-        listed = ", ".join(sorted(supported_suffixes()))
-        print(f"nothing to read -- no {listed} files found in those paths")
+    statements, failures = _load_all(paths, password, prompt=prompt)
+    if statements is None:
         return 2
-
-    banks: list[Statement] = []
-    cards: list[CardStatement] = []
-    failures = 0
-    for path in targets:
-        statement = _load(path, password, prompt=prompt)
-        if statement is None:
-            failures += 1
-        elif isinstance(statement, CardStatement):
-            cards.append(statement)
-        else:
-            banks.append(statement)
-
-    if not banks and not cards:
+    if not statements:
         return 1
+
+    banks: list[Statement] = [s for s in statements if not isinstance(s, CardStatement)]
+    cards: list[CardStatement] = [s for s in statements if isinstance(s, CardStatement)]
 
     linkage = link_card_repayments(banks, cards)
     transfers = find_transfers(banks)
@@ -407,18 +376,11 @@ def _merchants(
     top: int = 15,
     unmatched: bool = False,
 ) -> int:
-    targets = _expand(paths)
-    if not targets:
-        listed = ", ".join(sorted(supported_suffixes()))
-        print(f"nothing to read -- no {listed} files found in those paths")
+    statements, failures = _load_all(paths, password, prompt=prompt)
+    if statements is None:
         return 2
 
-    failures = 0
-    for path in targets:
-        statement = _load(path, password, prompt=prompt)
-        if statement is None:
-            failures += 1
-            continue
+    for statement in statements:
         print(_merchant_report(statement, top=top, unmatched=unmatched))
         print()
 
@@ -593,7 +555,18 @@ def _expand(paths: list[Path]) -> list[Path]:
             )
         else:
             expanded.append(path)
-    return expanded
+
+    # Naming a folder and a file inside it would otherwise load that statement
+    # twice and double every total it contributes to.
+    seen: set[Path] = set()
+    unique: list[Path] = []
+    for path in expanded:
+        key = path.resolve() if path.exists() else path.absolute()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(path)
+    return unique
 
 
 if __name__ == "__main__":

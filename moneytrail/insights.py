@@ -24,6 +24,9 @@ class MerchantTotals:
     debits: Paise = 0
     credits: Paise = 0
     count: int = 0
+    #: How many of `count` were outflows. A "where it went" table that counts
+    #: refunds alongside charges overstates how often you paid.
+    debit_count: int = 0
     sources: Counter = field(default_factory=Counter)
 
     @property
@@ -80,6 +83,7 @@ def roll_up(statement: Statement | CardStatement) -> MerchantRollup:
     debits: Counter = Counter()
     credits: Counter = Counter()
     counts: Counter = Counter()
+    debit_counts: Counter = Counter()
     categories: dict[str, str] = {}
     sources: dict[str, Counter] = {}
 
@@ -90,6 +94,7 @@ def roll_up(statement: Statement | CardStatement) -> MerchantRollup:
         counts[key] += 1
         if txn.direction is Direction.DEBIT:
             debits[key] += txn.amount
+            debit_counts[key] += 1
         else:
             credits[key] += txn.amount
 
@@ -100,6 +105,7 @@ def roll_up(statement: Statement | CardStatement) -> MerchantRollup:
             debits=debits[name],
             credits=credits[name],
             count=counts[name],
+            debit_count=debit_counts[name],
             sources=sources[name],
         )
         for name in counts
