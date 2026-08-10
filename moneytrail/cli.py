@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 from .insights import by_category, roll_up
+from .linking import link_card_repayments, summarise_spend
 from .models import CardStatement, Statement
 from .money import format_paise
 from .parsers import (
@@ -63,6 +64,14 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="list the narrations that did not resolve confidently",
     )
+    subcommands.add_parser(
+        "spend",
+        parents=[common],
+        help=(
+            "what actually left your control, with card bill repayments matched "
+            "to the card purchases they settle"
+        ),
+    )
 
     args = parser.parse_args(argv)
     prompt = not args.no_prompt
@@ -76,7 +85,76 @@ def main(argv: list[str] | None = None) -> int:
             top=args.top,
             unmatched=args.unmatched,
         )
+    if args.command == "spend":
+        return _spend(args.paths, args.password, prompt=prompt)
     return 2
+
+
+def _spend(paths: list[Path], password: str | None = None, *, prompt: bool = True) -> int:
+    targets = _expand(paths)
+    if not targets:
+        listed = ", ".join(sorted(supported_suffixes()))
+        print(f"nothing to read -- no {listed} files found in those paths")
+        return 2
+
+    banks: list[Statement] = []
+    cards: list[CardStatement] = []
+    failures = 0
+    for path in targets:
+        statement = _load(path, password, prompt=prompt)
+        if statement is None:
+            failures += 1
+        elif isinstance(statement, CardStatement):
+            cards.append(statement)
+        else:
+            banks.append(statement)
+
+    if not banks and not cards:
+        return 1
+
+    linkage = link_card_repayments(banks, cards)
+    spend = summarise_spend(banks, cards, linkage)
+
+    print(f"{len(banks)} bank statement(s), {len(cards)} card statement(s)")
+    print()
+    print(f"  bank outflow            {format_paise(spend.bank_outflow):>16}")
+    print(
+        f"  repayments matched    - {format_paise(spend.matched_repayments):>16}"
+        f"   ({len(linkage.matched)} linked to a card statement)"
+    )
+    print(f"  card charges          + {format_paise(spend.card_charges):>16}")
+    print("  " + "-" * 40)
+    print(f"  actually spent          {format_paise(spend.true_outflow):>16}")
+    print()
+
+    if linkage.unmatched:
+        print(
+            f"  {len(linkage.unmatched)} repayment(s) totalling "
+            f"{format_paise(spend.unmatched_repayments)} have no card statement "
+            f"behind them, so they stay counted -- the purchases they settled are "
+            f"not in front of us:"
+        )
+        for link in linkage.unmatched:
+            txn = link.bank_transaction
+            print(
+                f"    {txn.date}  {format_paise(txn.amount):>13}  "
+                f"{_clip(txn.narration, 58)}"
+            )
+        print()
+
+    if linkage.orphan_card_payments:
+        total = sum(txn.amount for _, txn in linkage.orphan_card_payments)
+        print(
+            f"  {len(linkage.orphan_card_payments)} card payment(s) totalling "
+            f"{format_paise(total)} have no matching bank debit -- settled from an "
+            f"account that was not supplied"
+        )
+        print()
+
+    if spend.complete and cards:
+        print("  every card repayment is accounted for by a card statement")
+
+    return 1 if failures else 0
 
 
 def _merchants(

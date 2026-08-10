@@ -45,6 +45,12 @@ def spreadsheet_path() -> Path:
 
 
 @pytest.fixture
+def july_bank_path() -> Path:
+    """A bank statement whose CRED debit settles the card fixture's payment."""
+    return FIXTURES / "hdfc_july_2025.csv"
+
+
+@pytest.fixture
 def card_path() -> Path:
     """A credit-card statement: summary box, no running balance, Cr suffixes."""
     return FIXTURES / "hdfc_card_july_2025.csv"

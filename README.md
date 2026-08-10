@@ -181,9 +181,30 @@ transfer to a friend is understood, not an unresolved merchant.
 The same pass found the largest single outflow filed under the wrong category:
 CRED is a card-bill platform, not a fee.
 
+### Where the money actually went
+
+`moneytrail spend` treats a card bill payment as what it is: one event recorded
+twice — a debit leaving the bank, and a credit reducing what the card says you
+owe. Counting both double-counts the money.
+
+```
+  bank outflow                  ₹45,900.00
+  repayments matched    -       ₹12,450.00   (1 linked to a card statement)
+  card charges          +        ₹8,320.50
+  ----------------------------------------
+  actually spent                ₹41,770.50
+```
+
+Repayments are matched to card-side payments on an exact amount and a date
+window. **A repayment with no card statement behind it stays counted**, because
+the purchases it settled are not in front of us — removing it would understate
+spending, and understating is the more dangerous error. The report names those
+repayments rather than burying the assumption. Card payments with no matching
+bank debit are reported too: they were settled from an account you did not
+supply.
+
 | phase | what |
 |---|---|
-| 3a | Match bank-side card repayments to card-side payments, so settling a card bill is not counted as spending on top of the purchases it settles |
 | 3 | The actual questions: refund matching (debit → expected credit within *n* days, flag the ones that never closed), duplicate-charge detection, recurring-charge detection |
 | 4 | Natural-language query layer over the ledger, every answer traced back to the rows it came from |
 | 5 | Multi-account merge, with inter-account transfer detection so moving your own money is not counted as income *and* expense |
