@@ -1,0 +1,28 @@
+# This tool eats bank statements. The repository must never contain one.
+*.pdf
+*.csv
+*.tsv
+*.xls
+*.xlsx
+*.ofx
+*.qif
+/data/
+/statements/
+*.db
+*.sqlite3
+
+# ...except the synthetic fixtures, which contain no real account data.
+!tests/fixtures/*.csv
+!tests/fixtures/*.pdf
+!tests/fixtures/*.xls
+!tests/fixtures/*.xlsx
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.env

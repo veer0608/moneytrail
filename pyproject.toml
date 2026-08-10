@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "moneytrail"
+version = "0.1.0"
+description = "Turn bank statements into a ledger that provably adds up."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+pdf = ["pdfplumber>=0.11"]
+xlsx = ["openpyxl>=3.1"]
+formats = ["pdfplumber>=0.11", "openpyxl>=3.1"]
+dev = ["pytest>=8", "pdfplumber>=0.11", "openpyxl>=3.1", "reportlab>=4"]
+
+[project.scripts]
+moneytrail = "moneytrail.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["moneytrail*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
