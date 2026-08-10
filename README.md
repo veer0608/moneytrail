@@ -84,6 +84,9 @@ local instead of cascading. That gives two distinguishable signatures:
 python -m moneytrail check path/to/statement.pdf
 python -m moneytrail check path/to/statement.csv
 python -m moneytrail check path/to/a/folder
+
+python -m moneytrail merchants statements/
+python -m moneytrail merchants statements/ --unmatched
 ```
 
 Encrypted PDFs prompt for a password without echoing it, so it stays out of
@@ -123,8 +126,8 @@ of which the synthetic fixtures could have found: divider rows drawn in
 asterisks, amounts masked with `******`, a two-row summary block at the foot,
 and an IFSC code being mistaken for a reference number. Each is now a test.
 
-**Phase 2 — in progress.** `narration.py`, `segmentation.py` and `merchants.py`
-are built and tested but not yet surfaced in the CLI:
+**Phase 2 — shipped.** `moneytrail merchants` rolls a ledger up by counterparty
+and category.
 
 - narrations are taken apart structurally — find the VPA, and the counterparty
   is the segment beside it, which works across banks without per-bank patterns
@@ -135,9 +138,31 @@ are built and tested but not yet surfaced in the CLI:
   (`lexicon` / `vpa` / `prefix` / `segmented` / `raw`), because a normaliser
   that hides its confidence cannot be debugged
 
+### What measuring it changed
+
+Merchant coverage on the real statement came out at **18%**, and chasing that
+number would have been the wrong response. Classifying the *counterparty* first
+showed why it was low:
+
+| counterparty | share of a real 225-transaction statement |
+|---|---|
+| person-to-person transfer | 41% |
+| credit-card bill repayment | 18% |
+| bank charges and interest | 5% |
+| recognised merchant | 4% |
+| still unclassified | 32% |
+
+**This is not a merchant-heavy ledger.** A bigger brand lexicon would have moved
+almost nothing; the value is in transfers and card bills, which is where phases
+3 and 5 now point. Reporting one "resolved" percentage would have hidden that
+entirely, so the tool reports the classification breakdown alongside it — a
+transfer to a friend is understood, not an unresolved merchant.
+
+The same pass found the largest single outflow filed under the wrong category:
+CRED is a card-bill platform, not a fee.
+
 | phase | what |
 |---|---|
-| 2 | Wire merchant normalisation into the ledger and the CLI |
 | 3 | The actual questions: refund matching (debit → expected credit within *n* days, flag the ones that never closed), duplicate-charge detection, recurring-charge detection |
 | 4 | Natural-language query layer over the ledger, every answer traced back to the rows it came from |
 | 5 | Multi-account merge, with inter-account transfer detection so moving your own money is not counted as income *and* expense |

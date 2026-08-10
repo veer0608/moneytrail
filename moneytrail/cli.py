@@ -11,7 +11,9 @@ import getpass
 import sys
 from pathlib import Path
 
+from .insights import by_category, roll_up
 from .models import Statement
+from .money import format_paise
 from .parsers import (
     NoParserFound,
     PasswordRequired,
@@ -28,28 +30,141 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="moneytrail")
     subcommands = parser.add_subparsers(dest="command", required=True)
 
-    check = subcommands.add_parser(
-        "check", help="parse statements and verify they reconcile to the paisa"
-    )
-    check.add_argument("paths", nargs="+", type=Path)
-    check.add_argument(
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("paths", nargs="+", type=Path)
+    common.add_argument(
         "--password",
         help=(
             "password for encrypted PDFs. Prefer leaving this off -- you will be "
             "prompted without echo, which keeps it out of your shell history"
         ),
     )
-
-    check.add_argument(
+    common.add_argument(
         "--no-prompt",
         action="store_true",
         help="never ask for a password; report locked files and carry on (for CI)",
     )
 
+    subcommands.add_parser(
+        "check",
+        parents=[common],
+        help="parse statements and verify they reconcile to the paisa",
+    )
+    merchants = subcommands.add_parser(
+        "merchants",
+        parents=[common],
+        help="who you actually paid, rolled up by merchant and category",
+    )
+    merchants.add_argument(
+        "--top", type=int, default=15, help="how many merchants to list (default 15)"
+    )
+    merchants.add_argument(
+        "--unmatched",
+        action="store_true",
+        help="list the narrations that did not resolve confidently",
+    )
+
     args = parser.parse_args(argv)
+    prompt = not args.no_prompt
     if args.command == "check":
-        return _check(args.paths, args.password, prompt=not args.no_prompt)
+        return _check(args.paths, args.password, prompt=prompt)
+    if args.command == "merchants":
+        return _merchants(
+            args.paths,
+            args.password,
+            prompt=prompt,
+            top=args.top,
+            unmatched=args.unmatched,
+        )
     return 2
+
+
+def _merchants(
+    paths: list[Path],
+    password: str | None = None,
+    *,
+    prompt: bool = True,
+    top: int = 15,
+    unmatched: bool = False,
+) -> int:
+    targets = _expand(paths)
+    if not targets:
+        listed = ", ".join(sorted(supported_suffixes()))
+        print(f"nothing to read -- no {listed} files found in those paths")
+        return 2
+
+    failures = 0
+    for path in targets:
+        statement = _load(path, password, prompt=prompt)
+        if statement is None:
+            failures += 1
+            continue
+        print(_merchant_report(statement, top=top, unmatched=unmatched))
+        print()
+
+    return 1 if failures else 0
+
+
+def _merchant_report(statement: Statement, *, top: int, unmatched: bool) -> str:
+    rollup = roll_up(statement)
+    lines = [f"{statement.source}  --  {rollup.transactions} transactions", ""]
+
+    heading = f"  {'merchant':<26} {'category':<14} {'out':>14} {'in':>14}   n"
+    lines.append(heading)
+    lines.append("  " + "-" * (len(heading) - 2))
+    for entry in rollup.entries[:top]:
+        lines.append(
+            f"  {_clip(entry.name, 26):<26} {_clip(entry.category, 14):<14} "
+            f"{_amount(entry.debits):>14} {_amount(entry.credits):>14} "
+            f"{entry.count:>3}"
+        )
+    if len(rollup.entries) > top:
+        lines.append(f"  ... and {len(rollup.entries) - top} more")
+
+    lines.append("")
+    heading = f"  {'category':<26} {'out':>14} {'in':>14}   n"
+    lines.append(heading)
+    lines.append("  " + "-" * (len(heading) - 2))
+    for category, debits, credits, count in by_category(rollup):
+        lines.append(
+            f"  {_clip(category, 26):<26} {_amount(debits):>14} "
+            f"{_amount(credits):>14} {count:>3}"
+        )
+
+    kinds = ", ".join(f"{kind} {count}" for kind, count in rollup.by_kind.most_common())
+    sources = ", ".join(
+        f"{source} {count}" for source, count in rollup.by_source.most_common()
+    )
+    lines.append("")
+    lines.append(f"  counterparties  {kinds}")
+    lines.append(
+        f"  named           {rollup.confident}/{rollup.transactions} "
+        f"({rollup.coverage:.1%}) from a known merchant -- {sources}"
+    )
+
+    remaining = rollup.unclassified
+    if remaining and not unmatched:
+        lines.append(
+            f"  {len(remaining)} unclassified -- rerun with --unmatched to see them"
+        )
+    elif remaining:
+        lines.append(f"  {len(remaining)} unclassified:")
+        seen: set[str] = set()
+        for match in remaining:
+            if match.name in seen:
+                continue
+            seen.add(match.name)
+            lines.append(f"    {_clip(match.name, 34):<34} {match.narration.raw}")
+
+    return "\n".join(lines)
+
+
+def _amount(paise: int) -> str:
+    return format_paise(paise) if paise else "-"
+
+
+def _clip(text: str, width: int) -> str:
+    return text if len(text) <= width else text[: width - 1] + "…"
 
 
 def _check(
