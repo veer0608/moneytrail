@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 from .insights import by_category, roll_up
-from .linking import link_card_repayments, summarise_spend
+from .linking import find_transfers, link_card_repayments, summarise_spend
 from .models import CardStatement, Statement
 from .money import format_paise
 from .patterns import find_duplicates, find_recurring, find_refunds
@@ -198,7 +198,8 @@ def _spend(paths: list[Path], password: str | None = None, *, prompt: bool = Tru
         return 1
 
     linkage = link_card_repayments(banks, cards)
-    spend = summarise_spend(banks, cards, linkage)
+    transfers = find_transfers(banks)
+    spend = summarise_spend(banks, cards, linkage, transfers)
 
     print(f"{len(banks)} bank statement(s), {len(cards)} card statement(s)")
     print()
@@ -207,10 +208,35 @@ def _spend(paths: list[Path], password: str | None = None, *, prompt: bool = Tru
         f"  repayments matched    - {format_paise(spend.matched_repayments):>16}"
         f"   ({len(linkage.matched)} linked to a card statement)"
     )
+    print(
+        f"  transfers to yourself - {format_paise(spend.internal_transfers):>16}"
+        f"   ({len(transfers)} moved between your own accounts)"
+    )
     print(f"  card charges          + {format_paise(spend.card_charges):>16}")
     print("  " + "-" * 40)
     print(f"  actually spent          {format_paise(spend.true_outflow):>16}")
     print()
+    print(f"  bank inflow             {format_paise(spend.bank_inflow):>16}")
+    print(f"  less those transfers  - {format_paise(spend.internal_transfers):>16}")
+    print("  " + "-" * 40)
+    print(f"  actually received       {format_paise(spend.true_inflow):>16}")
+    print()
+
+    if transfers:
+        print(
+            "  transfers between your own accounts (both narrations shown -- an "
+            "exact-amount coincidence would look the same):"
+        )
+        for transfer in transfers:
+            out_txn, in_txn = transfer.out_transaction, transfer.in_transaction
+            print(
+                f"    {out_txn.date}  {format_paise(transfer.amount):>13}  "
+                f"{transfer.out_source.name} -> {transfer.in_source.name}"
+                f"{'' if transfer.lag_days == 0 else f' (+{transfer.lag_days}d)'}"
+            )
+            print(f"        out: {_clip(out_txn.narration, 66)}")
+            print(f"         in: {_clip(in_txn.narration, 66)}")
+        print()
 
     if linkage.unmatched:
         print(

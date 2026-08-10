@@ -8,7 +8,9 @@ from moneytrail import parse_statement, reconcile
 from moneytrail.cli import main
 from moneytrail.linking import (
     card_repayments,
+    find_transfers,
     link_card_repayments,
+    merge,
     summarise_spend,
 )
 
@@ -112,7 +114,72 @@ class TestSpend:
         assert spend.matched_repayments == 0
 
 
+class TestTransfers:
+    @pytest.fixture
+    def accounts(self, hdfc_aug_path, icici_aug_path):
+        return [parse_statement(hdfc_aug_path), parse_statement(icici_aug_path)]
+
+    def test_both_statements_reconcile(self, accounts):
+        assert all(reconcile(statement).ok for statement in accounts)
+
+    def test_money_moving_between_your_own_accounts_is_found(self, accounts):
+        transfers = find_transfers(accounts)
+
+        assert len(transfers) == 1
+        assert transfers[0].amount == 2_500_000
+        assert transfers[0].lag_days == 0
+        assert transfers[0].out_source != transfers[0].in_source
+
+    def test_a_debit_and_credit_on_the_same_account_is_not_a_transfer(self, accounts):
+        # Otherwise a refund would be read as moving money to yourself.
+        assert find_transfers([accounts[0]]) == []
+
+    def test_a_credit_outside_the_window_is_not_a_transfer(self, accounts):
+        assert find_transfers(accounts, window=(2, 3)) == []
+
+    def test_it_is_removed_from_both_sides(self, accounts):
+        spend = summarise_spend(accounts, [])
+
+        assert spend.bank_outflow == 5_360_000
+        assert spend.bank_inflow == 10_500_000
+        assert spend.internal_transfers == 2_500_000
+        # What was really spent, and what was really earned: the salary alone.
+        assert spend.true_outflow == 2_860_000
+        assert spend.true_inflow == 8_000_000
+
+    def test_without_the_other_account_nothing_is_removed(self, accounts):
+        spend = summarise_spend([accounts[0]], [])
+
+        assert spend.internal_transfers == 0
+        assert spend.true_outflow == spend.bank_outflow
+
+
+class TestMerge:
+    def test_orders_across_accounts_and_tags_each_row(
+        self, hdfc_aug_path, icici_aug_path
+    ):
+        entries = merge([parse_statement(hdfc_aug_path), parse_statement(icici_aug_path)])
+
+        dates = [entry.transaction.date for entry in entries]
+        assert dates == sorted(dates)
+        assert {entry.account for entry in entries} == {
+            "HDFC XXXXXXXX4471",
+            "ICICI ****8820",
+        }
+
+
 class TestCommand:
+    def test_reports_transfers_with_both_narrations(
+        self, hdfc_aug_path, icici_aug_path, capsys
+    ):
+        assert main(["spend", str(hdfc_aug_path), str(icici_aug_path)]) == 0
+
+        out = capsys.readouterr().out
+        assert "transfers to yourself" in out
+        assert "actually received" in out
+        assert "SELF TRANSFER TO ICICI" in out  # the outgoing narration
+        assert "VEER ARORA HDFC" in out  # and the incoming one
+
     def test_reports_the_adjusted_total(self, july_bank_path, card_path, capsys):
         assert main(["spend", str(july_bank_path), str(card_path)]) == 0
 

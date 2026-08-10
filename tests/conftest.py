@@ -45,6 +45,18 @@ def spreadsheet_path() -> Path:
 
 
 @pytest.fixture
+def hdfc_aug_path() -> Path:
+    """One side of an inter-account transfer: Rs 25,000 out to ICICI."""
+    return FIXTURES / "hdfc_aug_2025.csv"
+
+
+@pytest.fixture
+def icici_aug_path() -> Path:
+    """The other side: the same Rs 25,000 arriving."""
+    return FIXTURES / "icici_aug_2025.csv"
+
+
+@pytest.fixture
 def patterns_path() -> Path:
     """Five months containing one of each thing worth finding.
 

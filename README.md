@@ -234,9 +234,35 @@ supply.
   that you asked for one. The report says so rather than implying the absence of
   a finding means nothing is owed to you.
 
+### More than one account
+
+Move ₹25,000 between your own accounts and a naive merge records ₹25,000 spent
+and ₹25,000 earned. Neither happened. `spend` matches debits on one account to
+credits on another and removes them from both sides:
+
+```
+  bank outflow                  ₹53,600.00
+  transfers to yourself -       ₹25,000.00   (1 moved between your own accounts)
+  actually spent                ₹28,600.00
+
+  bank inflow                 ₹1,05,000.00
+  less those transfers  -       ₹25,000.00
+  actually received             ₹80,000.00
+```
+
+Matching only ever pairs *across* accounts — a debit and credit on the same
+statement is a refund, not a transfer. And because paying a friend a round sum
+on the day someone pays you the same amount would look identical, both
+narrations are printed so you can see exactly what was matched to what.
+
+Card repayments and inter-account transfers turned out to be the same
+operation — find the credit on another document that this debit produced — so
+they share one matcher rather than two that can drift apart.
+
+## Roadmap
+
 | phase | what |
-|---|---|: refund matching (debit → expected credit within *n* days, flag the ones that never closed), duplicate-charge detection, recurring-charge detection |
-| 4 | Multi-account merge, with inter-account transfer detection so moving your own money is not counted as income *and* expense |
+|---|---|
 | 5 | The trust strip — a page showing every statement-month as reconciled or failed, then open loops, with the category breakdown last and smallest |
 | 6 | Natural-language query layer over the ledger, every answer traced back to the rows it came from |
 
