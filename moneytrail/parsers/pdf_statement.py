@@ -44,9 +44,9 @@ class PdfStatementParser(StatementParser):
 
         try:
             document = pdfplumber.open(path, password=password or "")
-        except _password_errors():
-            raise PasswordRequired(path, wrong=bool(password)) from None
         except Exception as exc:  # corrupt file, truncated download, not a PDF
+            if _is_password_problem(exc) or is_encrypted(path):
+                raise PasswordRequired(path, wrong=bool(password)) from None
             raise UnparseableStatement(f"{path}: could not open PDF -- {exc}") from exc
 
         with document:
@@ -102,9 +102,26 @@ def _import_pdfplumber():
     return pdfplumber
 
 
-def _password_errors() -> tuple[type[BaseException], ...]:
+def is_encrypted(path: Path) -> bool:
+    """Whether the PDF declares an /Encrypt entry.
+
+    The authority on "this needs a password" is the file, not an exception
+    class. pdfminer's password error has moved between versions and on some
+    platforms arrives with an empty message, so a statement that was correctly
+    reported as LOCKED on one machine came back as an unreadable file on
+    another. Reading the flag out of the document settles it everywhere.
+    """
     try:
-        from pdfminer.pdfdocument import PDFPasswordIncorrect
-    except ImportError:
-        return ()
-    return (PDFPasswordIncorrect,)
+        return b"/Encrypt" in path.read_bytes()
+    except OSError:
+        return False
+
+
+def _is_password_problem(exc: BaseException) -> bool:
+    """Match on class name across the cause chain rather than on an import."""
+    seen: BaseException | None = exc
+    while seen is not None:
+        if "password" in type(seen).__name__.lower():
+            return True
+        seen = seen.__cause__ or seen.__context__
+    return False

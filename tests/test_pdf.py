@@ -55,6 +55,18 @@ def test_balance_marker_rows_are_not_transactions(pdf_path):
     assert all("BALANCE" not in t.narration for t in statement.transactions)
 
 
+def test_encryption_is_read_from_the_file_not_from_an_exception(
+    locked_pdf_path, pdf_path
+):
+    # CI caught this: pdfminer's password error moved between versions and
+    # arrives with an empty message on Linux, so a locked statement was
+    # reported as simply unreadable there while working on Windows.
+    from moneytrail.parsers.pdf_statement import is_encrypted
+
+    assert is_encrypted(locked_pdf_path)
+    assert not is_encrypted(pdf_path)
+
+
 def test_locked_pdf_asks_for_a_password(locked_pdf_path):
     with pytest.raises(PasswordRequired) as caught:
         parse_statement(locked_pdf_path)
