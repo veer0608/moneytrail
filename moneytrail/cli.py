@@ -60,6 +60,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     ask_command.add_argument("question")
     ask_command.add_argument("paths", nargs="+", type=Path)
+    ask_command.add_argument(
+        "--model",
+        help=(
+            "let a model work out what the question means. It picks the query; "
+            "the arithmetic is still done here. Falls back to the built-in "
+            "parser if no API key is configured"
+        ),
+    )
+    ask_command.add_argument(
+        "--provider",
+        help="which API to use (default: whichever one has a key set)",
+    )
 
     subcommands.add_parser(
         "check",
@@ -128,7 +140,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "spend":
         return _spend(args.paths, args.password, prompt=prompt)
     if args.command == "ask":
-        return _ask(args.question, args.paths, args.password, prompt=prompt)
+        return _ask(
+            args.question,
+            args.paths,
+            args.password,
+            prompt=prompt,
+            model=args.model,
+            provider=args.provider,
+        )
     return 2
 
 
@@ -139,6 +158,8 @@ def _ask(
     *,
     prompt: bool = True,
     show: int = 10,
+    model: str | None = None,
+    provider: str | None = None,
 ) -> int:
     statements, failures = _load_all(paths, password, prompt=prompt)
     if statements is None:
@@ -146,12 +167,18 @@ def _ask(
     if not statements:
         return 1
 
-    answer = ask(question, build_ledger(statements))
+    ledger = build_ledger(statements)
+    answer, parsed_by, note = _interpret(
+        question, ledger, model=model, provider=provider
+    )
 
     print(f"> {answer.question}")
     print()
     print(f"  {answer.headline}")
     print()
+    print(f"  parsed by {parsed_by}")
+    if note:
+        print(f"  note: {note}")
     if answer.filters:
         print(f"  filters   {', '.join(answer.filters)}")
     if answer.rows:
@@ -171,6 +198,33 @@ def _ask(
     if failures:
         return 1
     return 0 if answer.understood else 2
+
+
+def _interpret(
+    question, ledger, *, model=None, provider=None
+) -> tuple[object, str, str]:
+    """Answer the question, and say plainly which parser worked it out.
+
+    Without --model nothing reaches for a network, even with a key sitting in
+    the environment: a question asked the way it has always been asked has to
+    keep answering the way it always did.
+    """
+    if not model and not provider:
+        return ask(question, ledger), "the built-in parser", ""
+
+    from .interpret import ask_model
+    from .llm import build_client
+
+    client = build_client(provider, model)
+    if client is None:
+        wanted = provider or model
+        return (
+            ask(question, ledger),
+            "the built-in parser",
+            f"no API key configured for {wanted!r}, so the built-in parser "
+            f"answered this instead",
+        )
+    return ask_model(question, ledger, client), client.model, ""
 
 
 def _load_all(
