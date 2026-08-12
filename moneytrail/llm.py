@@ -33,6 +33,12 @@ from typing import Protocol
 PROVIDER_ENV = "MONEYTRAIL_PROVIDER"
 MODEL_ENV = "MONEYTRAIL_MODEL"
 
+#: urllib introduces itself as "Python-urllib/3.11", and providers sitting
+#: behind Cloudflare refuse that outright -- Groq answers it with a 403 and
+#: "error code: 1010", a browser-signature ban that never reaches the API and
+#: looks nothing like an auth failure. So the client says who it is.
+USER_AGENT = "moneytrail/0.1"
+
 
 @dataclass(frozen=True)
 class Provider:
@@ -215,7 +221,7 @@ class OpenAICompatibleClient:
         )
 
     def _post(self, path: str, payload: dict) -> dict:
-        headers = {"Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json", "User-Agent": USER_AGENT}
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
         data = json.dumps(payload).encode()

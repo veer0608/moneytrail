@@ -25,8 +25,10 @@ from moneytrail.interpret import (
 )
 from moneytrail.llm import (
     PRICES,
+    USER_AGENT,
     Completion,
     LLMError,
+    OpenAICompatibleClient,
     Usage,
     build_client,
     load_dotenv,
@@ -181,6 +183,94 @@ class TestReadingDotEnv:
         load_dotenv(tmp_path)
 
         assert os.environ.get("GROQ_API_KEY") == "gsk_quoted"
+
+
+class TestTheRequestItself:
+    """What goes on the wire, checked without going near a wire."""
+
+    def _sent(self, monkeypatch, status=200, body=None):
+        """Capture the Request the client would send."""
+        import urllib.request
+        from contextlib import contextmanager
+
+        captured = {}
+
+        @contextmanager
+        def fake_urlopen(request, timeout=None):
+            captured["request"] = request
+
+            class Response:
+                def read(self):
+                    return json.dumps(
+                        body
+                        or {
+                            "choices": [{"message": {"content": "{}"}}],
+                            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+                            "model": "test",
+                        }
+                    ).encode()
+
+            yield Response()
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        client = OpenAICompatibleClient(
+            base_url="https://example.invalid/v1", api_key="k", model="test"
+        )
+        client.complete(system="s", user="u", json_object=True)
+        return captured["request"]
+
+    def test_the_client_names_itself(self, monkeypatch):
+        # urllib's default User-Agent gets a Cloudflare 1010 from Groq, which
+        # is a 403 that looks nothing like the auth problem it is not.
+        request = self._sent(monkeypatch)
+
+        assert request.get_header("User-agent") == USER_AGENT
+        assert "urllib" not in request.get_header("User-agent")
+
+    def test_the_key_travels_as_a_bearer_token(self, monkeypatch):
+        assert self._sent(monkeypatch).get_header("Authorization") == "Bearer k"
+
+    def test_nothing_creative_is_asked_for(self, monkeypatch):
+        payload = json.loads(self._sent(monkeypatch).data)
+
+        assert payload["temperature"] == 0
+        assert payload["response_format"] == {"type": "json_object"}
+
+    def test_the_ledger_is_never_sent(self, monkeypatch, ledger):
+        # The one thing this module must never do. The model gets the schema
+        # and the vocabulary; it never gets the rows or a single amount.
+        import urllib.request
+        from contextlib import contextmanager
+
+        captured = {}
+
+        @contextmanager
+        def fake_urlopen(request, timeout=None):
+            captured["body"] = request.data.decode()
+
+            class Response:
+                def read(self):
+                    return json.dumps(
+                        {
+                            "choices": [{"message": {"content": '{"intent":"total"}'}}],
+                            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+                        }
+                    ).encode()
+
+            yield Response()
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        client = OpenAICompatibleClient(
+            base_url="https://example.invalid/v1", api_key="k", model="test"
+        )
+
+        interpret("how much did i spend", ledger, client)
+
+        sent = captured["body"]
+        for amount in ("28000", "2800000", "649", "85000"):
+            assert amount not in sent, f"an amount reached the model: {amount}"
+        for narration in ("ACH D- HOUSING RENT", "UPI-", "NEFT"):
+            assert narration not in sent, f"a narration reached the model: {narration}"
 
 
 class TestCost:
