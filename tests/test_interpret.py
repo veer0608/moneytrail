@@ -31,6 +31,7 @@ from moneytrail.llm import (
     OpenAICompatibleClient,
     Usage,
     build_client,
+    parse_duration,
     load_dotenv,
     price_of,
     resolve,
@@ -200,6 +201,8 @@ class TestTheRequestItself:
             captured["request"] = request
 
             class Response:
+                headers: dict = {}
+
                 def read(self):
                     return json.dumps(
                         body
@@ -249,6 +252,8 @@ class TestTheRequestItself:
             captured["body"] = request.data.decode()
 
             class Response:
+                headers: dict = {}
+
                 def read(self):
                     return json.dumps(
                         {
@@ -271,6 +276,69 @@ class TestTheRequestItself:
             assert amount not in sent, f"an amount reached the model: {amount}"
         for narration in ("ACH D- HOUSING RENT", "UPI-", "NEFT"):
             assert narration not in sent, f"a narration reached the model: {narration}"
+
+
+class TestPacing:
+    """The limit that binds is tokens a minute, and the server publishes it."""
+
+    @pytest.mark.parametrize(
+        ("text", "seconds"),
+        [
+            ("185ms", 0.185),
+            ("6.5s", 6.5),
+            ("2m30s", 150.0),
+            ("1h50m52.8s", 6652.8),
+            ("7.66s", 7.66),
+            ("", None),
+            ("soon", None),
+        ],
+    )
+    def test_the_reset_header_is_understood(self, text, seconds):
+        assert parse_duration(text) == seconds
+
+    def _client(self):
+        return OpenAICompatibleClient(
+            base_url="https://example.invalid/v1", api_key="k", model="test"
+        )
+
+    def test_it_waits_when_the_bucket_is_nearly_empty(self, monkeypatch):
+        slept = []
+        monkeypatch.setattr("moneytrail.llm.time.sleep", slept.append)
+
+        self._client()._pace(
+            {"x-ratelimit-remaining-tokens": "200", "x-ratelimit-reset-tokens": "6s"}
+        )
+
+        assert slept and slept[0] == pytest.approx(6.2)
+
+    def test_it_does_not_wait_while_there_is_room(self, monkeypatch):
+        slept = []
+        monkeypatch.setattr("moneytrail.llm.time.sleep", slept.append)
+
+        self._client()._pace(
+            {"x-ratelimit-remaining-tokens": "11963", "x-ratelimit-reset-tokens": "185ms"}
+        )
+
+        assert slept == []
+
+    def test_a_provider_that_publishes_nothing_is_not_paced(self, monkeypatch):
+        slept = []
+        monkeypatch.setattr("moneytrail.llm.time.sleep", slept.append)
+
+        self._client()._pace({})
+
+        assert slept == []
+
+    def test_a_long_reset_is_capped_rather_than_hanging_the_run(self, monkeypatch):
+        # A daily bucket can report hours. Sleeping that long is not pacing.
+        slept = []
+        monkeypatch.setattr("moneytrail.llm.time.sleep", slept.append)
+
+        self._client()._pace(
+            {"x-ratelimit-remaining-tokens": "0", "x-ratelimit-reset-tokens": "1h50m52.8s"}
+        )
+
+        assert slept == [65.0]
 
 
 class TestCost:
@@ -382,7 +450,13 @@ class TestValidation:
 
     @pytest.mark.parametrize(
         ("given", "expected"),
-        [("debit", Direction.DEBIT), ("credit", Direction.CREDIT), (None, None)],
+        [
+            ("debit", Direction.DEBIT),
+            ("credit", Direction.CREDIT),
+            # Unstated means spending, and is written down rather than left
+            # implicit -- see test_an_unstated_direction_is_written_down.
+            (None, Direction.DEBIT),
+        ],
     )
     def test_directions_map(self, ledger, given, expected):
         query, reason = to_query({"intent": "total", "direction": given}, ledger)
@@ -395,6 +469,35 @@ class TestValidation:
 
         assert query is None
         assert "sideways" in reason
+
+    def test_an_unstated_direction_is_written_down_as_debit(self, ledger):
+        # run() reads an unset direction as debit, so leaving it None would
+        # make the query say something other than what the engine did with it.
+        query, _ = to_query({"intent": "total", "category": "rent"}, ledger)
+
+        assert query.direction is Direction.DEBIT
+
+    def test_that_default_is_not_invented_for_intents_that_ignore_direction(
+        self, ledger
+    ):
+        # refunds and the pattern sweeps never read direction; filling one in
+        # would put a filter in the query that nothing applies.
+        for intent in ("refunds", "recurring", "duplicates"):
+            query, _ = to_query({"intent": intent}, ledger)
+
+            assert query.direction is None, intent
+
+    def test_a_stated_direction_is_left_alone(self, ledger):
+        query, _ = to_query({"intent": "total", "direction": "credit"}, ledger)
+
+        assert query.direction is Direction.CREDIT
+
+    def test_the_default_matches_what_the_engine_actually_does(self, ledger):
+        # The point of writing the default down: these must not diverge.
+        stated, _ = to_query({"intent": "total", "direction": "debit"}, ledger)
+        unstated, _ = to_query({"intent": "total"}, ledger)
+
+        assert run(stated, ledger).amount == run(unstated, ledger).amount
 
     def test_on_card_false_means_every_account_not_only_the_bank(self, ledger):
         query, _ = to_query({"intent": "total", "on_card": False}, ledger)
@@ -537,7 +640,7 @@ class TestTheModelNeverTouchesTheNumbers:
 
 class TestTheSeamIsTheSameSeam:
     def test_a_model_query_runs_through_the_very_same_engine(self, ledger):
-        query = Query("total", merchant="Netflix")
+        query = Query("total", merchant="Netflix", direction=Direction.DEBIT)
 
         read = interpret(
             "netflix", ledger, replying({"intent": "total", "merchant": "Netflix"})

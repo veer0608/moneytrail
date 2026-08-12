@@ -7,6 +7,7 @@ and guard the scoring from flattering anybody.
 
 from __future__ import annotations
 
+import json
 from datetime import date
 
 import pytest
@@ -22,8 +23,10 @@ from evals.runner import (
     answer_for,
     deterministic_parser,
     load,
+    report,
     main,
     markdown,
+    replay,
     same_query,
     score,
     splice,
@@ -254,7 +257,9 @@ class TestThePublishedTable:
         # one would either cost money on every run or quietly stop being run.
         # The baseline is free, and it is the row CI already depends on.
         ledger, items = golden
-        card = score(BASELINE, deterministic_parser, ledger, items)
+        # The published table is the held-out half, so the check has to be too.
+        held_out = [item for item in items if item.split == "test"]
+        card = score(BASELINE, deterministic_parser, ledger, held_out)
         start, end = MARKERS
         published = (
             (REPO / "README.md")
@@ -264,7 +269,7 @@ class TestThePublishedTable:
         )
         rows = [
             line
-            for line in markdown([card], items).splitlines()
+            for line in markdown([card], held_out).splitlines()
             if line.startswith(f"| {BASELINE} |")
         ]
 
@@ -290,6 +295,158 @@ class TestThePublishedTable:
 
         assert not splice(target, "new")
         assert target.read_text(encoding="utf-8") == "nothing to replace"
+
+
+class TestReplayingASavedRun:
+    """Republishing must not mean re-running: a pass costs a day's free budget."""
+
+    def test_a_saved_run_rebuilds_the_same_numbers(self, golden, tmp_path):
+        ledger, items = golden
+        card = score(BASELINE, deterministic_parser, ledger, items)
+        saved = tmp_path / "run.json"
+        saved.write_text(
+            json.dumps(
+                {
+                    BASELINE: {
+                        "results": [
+                            {
+                                "ask": r.item.ask,
+                                "set": r.item.which,
+                                "query_ok": r.query_ok,
+                                "answer_ok": r.answer_ok,
+                                "refused": r.refused,
+                                "model": "",
+                            }
+                            for r in card.results
+                        ]
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        rebuilt = replay([saved])
+
+        assert len(rebuilt) == 1
+        assert rebuilt[0].summary()["query_accuracy"] == card.summary()["query_accuracy"]
+        for which in SETS:
+            assert (
+                rebuilt[0].summary(which)["query_accuracy"]
+                == card.summary(which)["query_accuracy"]
+            ), which
+
+    def test_runs_from_separate_files_merge_into_one_table(self, tmp_path):
+        def written(name, ask):
+            path = tmp_path / f"{name}.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        name: {
+                            "results": [
+                                {
+                                    "ask": ask,
+                                    "set": "deterministic",
+                                    "query_ok": True,
+                                    "answer_ok": True,
+                                    "refused": False,
+                                    "model": name,
+                                    "prompt_tokens": 10,
+                                    "completion_tokens": 2,
+                                    "cost_usd": 0.001,
+                                    "latency_ms": 100.0,
+                                }
+                            ]
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return path
+
+        cards = replay([written("model-a", "q1"), written("model-b", "q1")])
+
+        assert {c.parser for c in cards} == {"model-a", "model-b"}
+        assert all(c.summary()["query_accuracy"] == 1.0 for c in cards)
+
+    def test_a_replayed_run_keeps_what_it_cost(self, tmp_path):
+        path = tmp_path / "r.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "m": {
+                        "results": [
+                            {
+                                "ask": "q",
+                                "set": "deterministic",
+                                "query_ok": True,
+                                "answer_ok": True,
+                                "refused": False,
+                                "model": "m",
+                                "prompt_tokens": 1000,
+                                "completion_tokens": 50,
+                                "cost_usd": 0.002,
+                                "latency_ms": 250.0,
+                            }
+                        ]
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        summary = replay([path])[0].summary()
+
+        assert summary["cost_per_question"] == pytest.approx(0.002)
+        assert summary["p50_latency_ms"] == 250.0
+
+
+class TestARunThatDiesPartWay:
+    """A model that ran out of quota has not scored badly -- it has not scored."""
+
+    def _dies_after(self, n: int):
+        from moneytrail.llm import QuotaExhausted
+
+        state = {"calls": 0}
+
+        def parse(question, ledger):
+            state["calls"] += 1
+            if state["calls"] > n:
+                raise QuotaExhausted("HTTP 429: ... tokens per day (TPD) ...")
+            from evals.runner import Attempt
+
+            return Attempt(query=Query("recurring"))
+
+        return parse
+
+    def test_it_is_marked_abandoned_rather_than_scored(self, golden):
+        ledger, items = golden
+
+        card = score("stub", self._dies_after(5), ledger, items)
+
+        assert not card.complete
+        assert "5 of" in card.abandoned
+        assert len(card.results) == 5
+
+    def test_an_abandoned_card_never_reaches_the_published_table(self, golden):
+        # The failure this prevents: 66 unasked questions counted as wrong,
+        # publishing a number that describes the quota, not the model.
+        ledger, items = golden
+        good = score(BASELINE, deterministic_parser, ledger, items)
+        dead = score("ran-out", self._dies_after(5), ledger, items)
+
+        table = markdown([good, dead], items)
+
+        assert BASELINE in table
+        assert "ran-out" not in table
+
+    def test_the_report_says_why_it_is_missing(self, golden):
+        ledger, items = golden
+        dead = score("ran-out", self._dies_after(5), ledger, items)
+
+        text = report([dead], ledger, items)
+
+        assert "NOT SCORED" in text
+        assert "ran-out" in text
 
 
 class TestTheGate:

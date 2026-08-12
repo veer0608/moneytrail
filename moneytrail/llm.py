@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
@@ -144,6 +145,36 @@ class LLMError(RuntimeError):
     """
 
 
+class QuotaExhausted(LLMError):
+    """The daily allowance is gone, and waiting inside this run will not help.
+
+    Distinguished from an ordinary rate limit because the two want opposite
+    handling. A per-minute limit is worth sleeping through. A per-day one is
+    not: retrying burns the better part of an hour to fail anyway, and -- far
+    worse -- every remaining question scores zero, which reads as a model that
+    got them wrong rather than one that was never asked.
+    """
+
+
+#: The daily limits do not appear in any header. `x-ratelimit-remaining-tokens`
+#: reports the per-minute bucket and will sit at a healthy 12,000 while the
+#: daily budget is already spent; the only place the real limit is named is the
+#: body of the 429 it eventually refuses you with.
+_DAILY_LIMIT = re.compile(r"per day|\bTPD\b|\bRPD\b", re.I)
+
+
+_DURATION = re.compile(r"(?:(\d+(?:\.\d+)?)h)?(?:(\d+(?:\.\d+)?)m(?!s))?(?:(\d+(?:\.\d+)?)s)?(?:(\d+(?:\.\d+)?)ms)?$")
+
+
+def parse_duration(text: str) -> float | None:
+    """Seconds from the shapes these headers actually use: 185ms, 6.5s, 1h50m52.8s."""
+    match = _DURATION.match(text.strip())
+    if not match or not any(match.groups()):
+        return None
+    hours, minutes, seconds, millis = (float(g or 0) for g in match.groups())
+    return hours * 3600 + minutes * 60 + seconds + millis / 1000
+
+
 def price_of(model: str, prompt_tokens: int, completion_tokens: int) -> float | None:
     rates = PRICES.get(model)
     if rates is None:
@@ -233,10 +264,14 @@ class OpenAICompatibleClient:
             )
             try:
                 with urllib.request.urlopen(request, timeout=self._timeout) as response:
-                    return json.loads(response.read().decode())
+                    body = json.loads(response.read().decode())
+                    self._pace(response.headers)
+                    return body
             except urllib.error.HTTPError as exc:
                 detail = exc.read().decode(errors="replace")[:300]
                 last = f"HTTP {exc.code}: {detail}"
+                if exc.code == 429 and _DAILY_LIMIT.search(detail):
+                    raise QuotaExhausted(last) from exc
                 if exc.code not in self.RETRY_ON or attempt == self._attempts:
                     raise LLMError(last) from exc
                 self._wait(exc, attempt)
@@ -246,6 +281,35 @@ class OpenAICompatibleClient:
                     raise LLMError(last) from exc
                 self._wait(None, attempt)
         raise LLMError(last)
+
+    #: Stop and wait for the bucket once it drops below roughly one more call.
+    HEADROOM_TOKENS = 1500
+
+    def _pace(self, headers) -> None:
+        """Wait for the token bucket before it empties, not after.
+
+        The limit that binds on a free tier is tokens per minute, not requests:
+        one of these calls carries the whole query schema and the ledger's
+        vocabulary, so a 12,000-token minute is about thirteen of them however
+        fast the requests are sent. Pacing on request count overruns that and
+        earns a 429 and exponential backoff, which is strictly slower than
+        having waited. The server publishes exactly what is left, so the client
+        reads it rather than guessing a delay -- and a guess would in any case
+        be wrong for the next model, whose limits differ.
+        """
+        remaining = headers.get("x-ratelimit-remaining-tokens")
+        reset = headers.get("x-ratelimit-reset-tokens")
+        if remaining is None or reset is None:
+            return  # a provider that says nothing gets no pacing
+        try:
+            left = float(remaining)
+        except ValueError:
+            return
+        if left > self.HEADROOM_TOKENS:
+            return
+        delay = parse_duration(reset)
+        if delay:
+            time.sleep(min(delay + 0.2, 65.0))
 
     def _wait(self, exc: urllib.error.HTTPError | None, attempt: int) -> None:
         """Honour Retry-After when the server sends one; back off when it does not."""

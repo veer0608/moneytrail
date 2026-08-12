@@ -375,33 +375,70 @@ dishonest:
 | model-only | 25 | one query expresses these; no regex parses them |
 | beyond-schema | 7 | no single query expresses these at all — refusing is the right answer |
 
+The only lever on model quality here is the prompt, and a prompt tuned by
+reading the questions it failed, then scored on those same questions, reports
+a number fitted to its own answer key. So **40% of the set is held back**, and
+which 40% is decided by a hash of the question text rather than by anything
+editable — whoever tunes the prompt does not get to choose what they are
+marked on. The table below is the **held-out half**, 29 questions the prompt
+was never shown.
+
 <!-- SCORECARD -->
 
-**deterministic-covered** (39 questions)
+**deterministic-covered** (16 questions)
 
 | parser | query acc | answer acc | refused | $/question | p50 |
 |---|---|---|---|---|---|
-| built-in regex parser | 100.0% | 100.0% | 7.7% | $0 | 0 ms |
+| built-in regex parser | 100.0% | 100.0% | 18.8% | $0 | 0 ms |
+| openai/gpt-oss-120b | 100.0% | 100.0% | 18.8% | $0.000272 | 1145 ms |
+| openai/gpt-oss-20b | 100.0% | 100.0% | 18.8% | $0.00014 | 708 ms |
+| llama-3.1-8b-instant | 81.2% | 87.5% | 18.8% | $0.000056 | 380 ms |
 
-**model-only** (25 questions)
-
-| parser | query acc | answer acc | refused | $/question | p50 |
-|---|---|---|---|---|---|
-| built-in regex parser | 0.0% | 0.0% | 92.0% | $0 | 0 ms |
-
-**beyond-schema** (7 questions)
+**model-only** (10 questions)
 
 | parser | query acc | answer acc | refused | $/question | p50 |
 |---|---|---|---|---|---|
-| built-in regex parser | 57.1% | 71.4% | 57.1% | $0 | 0 ms |
+| built-in regex parser | 0.0% | 0.0% | 100.0% | $0 | 0 ms |
+| openai/gpt-oss-120b | 80.0% | 90.0% | 10.0% | $0.000318 | 1263 ms |
+| openai/gpt-oss-20b | 80.0% | 90.0% | 10.0% | $0.000171 | 872 ms |
+| llama-3.1-8b-instant | 60.0% | 80.0% | 0.0% | $0.000057 | 532 ms |
 
-**overall** (71 questions)
+**beyond-schema** (3 questions)
 
 | parser | query acc | answer acc | refused | $/question | p50 |
 |---|---|---|---|---|---|
-| built-in regex parser | 60.6% | 62.0% | 42.3% | $0 | 0 ms |
+| built-in regex parser | 100.0% | 100.0% | 100.0% | $0 | 0 ms |
+| openai/gpt-oss-120b | 66.7% | 66.7% | 66.7% | $0.000306 | 1119 ms |
+| openai/gpt-oss-20b | 66.7% | 66.7% | 66.7% | $0.000143 | 763 ms |
+| llama-3.1-8b-instant | 33.3% | 33.3% | 33.3% | $0.000055 | 509 ms |
+
+**overall** (29 questions)
+
+| parser | query acc | answer acc | refused | $/question | p50 |
+|---|---|---|---|---|---|
+| built-in regex parser | 65.5% | 65.5% | 55.2% | $0 | 0 ms |
+| openai/gpt-oss-120b | 89.7% | 93.1% | 20.7% | $0.000291 | 1150 ms |
+| openai/gpt-oss-20b | 89.7% | 93.1% | 20.7% | $0.000151 | 734 ms |
+| llama-3.1-8b-instant | 69.0% | 79.3% | 13.8% | $0.000056 | 397 ms |
 
 <!-- /SCORECARD -->
+
+**A model earns its place on the half the regex cannot reach, and the big one
+is not worth it.** `gpt-oss-20b` matches `gpt-oss-120b` exactly — same query
+accuracy, same answer accuracy, same refusals — at **half the cost and twice
+the speed**. Four times the parameters buys nothing on this task, which is the
+kind of thing a scorecard is for and a vibe-check never tells you.
+
+**And the prompt tuning did not survive contact with the held-out half.**
+Iterating against dev failures moved the test half from 27/29 to 26/29 on
+query accuracy. One question was fixed, two broke, and the cause is traceable
+rather than statistical: a rule reading *"'how many'/'how often' are count,
+everything else is total"* — written to fix a dev question about BigBasket —
+swallowed *"did money come back from Myntra?"*, which is a refund question,
+contradicting a rule higher up the same prompt. At n=29 one question is inside
+the noise, but the mechanism is not: it is what tuning against a visible set
+looks like from the inside, and without the split it would have been published
+as an improvement.
 
 The third set exists because two of the questions this phase was designed
 around — *"compare March and April"*, *"which subscription went up in price"* —

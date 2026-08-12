@@ -30,7 +30,7 @@ import yaml
 
 from moneytrail import parse_statement
 from moneytrail.interpret import interpret
-from moneytrail.llm import LLMClient, Usage, build_client
+from moneytrail.llm import LLMClient, QuotaExhausted, Usage, build_client
 from moneytrail.models import Direction
 from moneytrail.query import (
     Answer,
@@ -229,6 +229,14 @@ class Result:
 class Scorecard:
     parser: str
     results: list[Result] = field(default_factory=list)
+    #: Set when the run stopped early. Such a card is reported as incomplete
+    #: and never scored: the questions it never reached would otherwise count
+    #: as answers it got wrong.
+    abandoned: str = ""
+
+    @property
+    def complete(self) -> bool:
+        return not self.abandoned
 
     def within(self, which: str) -> list[Result]:
         return [r for r in self.results if r.item.which == which]
@@ -256,11 +264,34 @@ class Scorecard:
         }
 
 
-def score(parser_name: str, parse: Parser, ledger: Ledger, items: Sequence[Item]) -> Scorecard:
+def score(
+    parser_name: str,
+    parse: Parser,
+    ledger: Ledger,
+    items: Sequence[Item],
+    *,
+    delay: float = 0.0,
+    on_progress: Callable[[int, int], None] | None = None,
+) -> Scorecard:
+    """Run every question through one parser.
+
+    `delay` paces the calls. Firing them as fast as the loop can manage earns a
+    stream of 429s and exponential backoff, which is both slower than pacing
+    and unpredictable -- the run spends its time asleep and cannot say how much
+    longer it needs.
+    """
     card = Scorecard(parser=parser_name)
-    for item in items:
+    for index, item in enumerate(items, 1):
+        if delay and index > 1:
+            time.sleep(delay)
         expected = answer_for(item.expected, ledger, item.ask)
-        attempt = parse(item.ask, ledger)
+        try:
+            attempt = parse(item.ask, ledger)
+        except QuotaExhausted as exc:
+            card.abandoned = (
+                f"stopped after {index - 1} of {len(items)} questions: {exc}"
+            )
+            return card
         produced = answer_for(attempt.query, ledger, item.ask)
         card.results.append(
             Result(
@@ -272,7 +303,69 @@ def score(parser_name: str, parse: Parser, ledger: Ledger, items: Sequence[Item]
                 note=attempt.note,
             )
         )
+        if on_progress:
+            on_progress(index, len(items))
     return card
+
+
+# --- replaying a saved run -------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ReplayItem:
+    """Enough of an Item to group a saved result by set and by split."""
+
+    ask: str
+    which: str
+
+    @property
+    def split(self) -> str:
+        return split_of(self.ask)
+
+
+@dataclass(frozen=True)
+class ReplayResult:
+    """A result read back from disk, with its verdicts already decided."""
+
+    item: ReplayItem
+    query_ok: bool
+    answer_ok: bool
+    refused: bool
+    usage: Usage | None
+
+
+def replay(paths: Sequence[Path]) -> list[Scorecard]:
+    """Rebuild scorecards from saved runs.
+
+    Each model affords about one pass through the golden set a day on a free
+    tier, so regenerating the published table cannot mean re-running it. The
+    table is still produced by the scorer rather than typed out -- just from
+    the recorded results instead of fresh calls.
+    """
+    cards: dict[str, Scorecard] = {}
+    for path in paths:
+        for name, saved in json.loads(path.read_text(encoding="utf-8")).items():
+            card = cards.setdefault(name, Scorecard(parser=name))
+            for row in saved["results"]:
+                usage = None
+                if row.get("model"):
+                    usage = Usage(
+                        model=row["model"],
+                        prompt_tokens=row.get("prompt_tokens", 0),
+                        completion_tokens=row.get("completion_tokens", 0),
+                        cost_usd=row.get("cost_usd"),
+                        latency_ms=row.get("latency_ms", 0.0),
+                    )
+                card.results.append(
+                    ReplayResult(
+                        item=ReplayItem(ask=row["ask"], which=row["set"]),
+                        query_ok=row["query_ok"],
+                        answer_ok=row["answer_ok"],
+                        refused=row["refused"],
+                        usage=usage,
+                    )
+                )
+    return list(cards.values())
 
 
 # --- reporting -------------------------------------------------------------
@@ -336,12 +429,22 @@ def report(cards: Sequence[Scorecard], ledger: Ledger, items: Sequence[Item]) ->
             "beyond-schema -- no query expresses these; refusing is the right answer"
         ),
     }
+    scored = [card for card in cards if card.complete]
     for which in SETS:
         if not counts.get(which):
             continue
-        out += [f"{headings[which]} ({counts[which]} questions)", table(cards, which), ""]
+        out += [f"{headings[which]} ({counts[which]} questions)", table(scored, which), ""]
 
-    out += ["overall", table(cards, None), ""]
+    out += ["overall", table(scored, None), ""]
+
+    for card in cards:
+        if not card.complete:
+            out += [
+                f"  {card.parser}: NOT SCORED -- {card.abandoned}",
+                "    the questions it never reached would count as answers it got "
+                "wrong, so it gets no row rather than a misleading one",
+                "",
+            ]
     for card in cards:
         total = card.summary()
         if total and total["total_cost"]:
@@ -364,6 +467,7 @@ def markdown(cards: Sequence[Scorecard], items: Sequence[Item]) -> str:
     regenerate is a number nobody should believe.
     """
     counts = {which: sum(i.which == which for i in items) for which in SETS}
+    cards = [card for card in cards if card.complete]  # never publish a partial row
     blocks = []
     for which in (*SETS, None):
         label = which or "overall"
@@ -490,8 +594,28 @@ def main(argv: list[str] | None = None) -> int:
             "the questions it covers. Never gates on a model"
         ),
     )
+    parser.add_argument(
+        "--delay",
+        type=float,
+        default=2.1,
+        help=(
+            "seconds between model calls. The free tiers allow about 30 a "
+            "minute, and pacing under that is faster than being throttled "
+            "into exponential backoff (default: %(default)s)"
+        ),
+    )
     parser.add_argument("--show-failures", action="store_true")
     parser.add_argument("--json", type=Path, help="write the raw results here")
+    parser.add_argument(
+        "--from-json",
+        type=Path,
+        nargs="+",
+        help=(
+            "rebuild the table from saved runs instead of calling anything. "
+            "One pass through the golden set is about a day's free-tier budget "
+            "per model, so republishing must not mean re-running"
+        ),
+    )
     parser.add_argument(
         "--update-readme",
         action="store_true",
@@ -523,6 +647,20 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         return 0
 
+    if args.from_json:
+        cards = replay(args.from_json)
+        scored = {r.item.ask for card in cards for r in card.results}
+        items = [i for i in items if i.ask in scored]
+        print()
+        print(report(cards, ledger, items))
+        if args.update_readme:
+            readme = REPO / "README.md"
+            if not splice(readme, markdown(cards, items)):
+                print(f"{readme.name} has no scorecard markers", file=sys.stderr)
+                return 2
+            print(f"\nwrote the scorecard into {readme.name}")
+        return 0
+
     specs = [s.strip() for s in args.models.split(",") if s.strip()]
     parsers = build_parsers(specs)
     if not parsers:
@@ -532,8 +670,30 @@ def main(argv: list[str] | None = None) -> int:
     cards = []
     for name, parse in parsers:
         started = time.perf_counter()
-        cards.append(score(name, parse, ledger, items))
-        print(f"  ran {name} in {time.perf_counter() - started:.1f}s", file=sys.stderr)
+
+        def progress(done: int, total: int, _name=name, _started=started) -> None:
+            if done % 10 and done != total:
+                return
+            spent = time.perf_counter() - _started
+            left = (spent / done) * (total - done)
+            print(
+                f"    {_name}: {done}/{total}  {spent:.0f}s spent, ~{left:.0f}s left",
+                file=sys.stderr,
+                flush=True,
+            )
+
+        cards.append(
+            score(
+                name,
+                parse,
+                ledger,
+                items,
+                # The baseline makes no calls, so pacing it would only waste time.
+                delay=0.0 if name == BASELINE else args.delay,
+                on_progress=None if name == BASELINE else progress,
+            )
+        )
+        print(f"  ran {name} in {time.perf_counter() - started:.1f}s", file=sys.stderr, flush=True)
 
     print()
     print(report(cards, ledger, items))

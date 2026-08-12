@@ -20,7 +20,7 @@ import json
 from dataclasses import dataclass
 from datetime import date
 
-from .llm import Completion, LLMClient, LLMError, Usage
+from .llm import Completion, LLMClient, LLMError, QuotaExhausted, Usage
 from .models import Direction
 from .query import (
     CANNOT_ANSWER,
@@ -59,8 +59,18 @@ Every other field is optional. Use null when it does not apply.
   merchant    EXACTLY one name from the merchant list, or null
   category    EXACTLY one name from the category list, or null
   period      a date range with an inclusive start and end, or null for all time
-  direction   "debit" for money going out, "credit" for money coming in, or null
+  direction   "debit" for money going out, "credit" for money coming in
   on_card     true to count only credit-card rows, or null for every account
+
+Say the least that answers the question. Every field you set is another filter
+applied to the rows, so a field set without being asked for narrows the answer
+to something nobody asked about:
+- Set merchant OR category, never both. A merchant already sits in a category,
+  so setting both can only ever narrow the result further than the question.
+- Leave period null when the question names no time. Null already means every
+  statement; writing out the ledger's full date range says the same thing in a
+  way that stops being true the moment another statement is loaded.
+- Leave on_card null unless the question actually mentions a card.
 
 Set only the fields the chosen intent reads. Everything else must be null:
   total       merchant, category, period, direction, on_card
@@ -86,7 +96,12 @@ Rules that matter more than being helpful:
 - Relative dates ("last month", "this year") resolve against the ledger's last
   transaction date given below, never against the real today.
 - "spent" is direction "debit". "received", "earned", "paid me", "income" and
-  "credited" are direction "credit".
+  "credited" are direction "credit". When the question says neither, it is
+  about money going out: use "debit". Do not leave direction null.
+- "how many" and "how often" are count. Everything else asking what something
+  came to -- including "show me everything from X", "what did X cost", "what's
+  my X bill" -- is total. Seeing the transactions is what the evidence rows are
+  for; the intent is still the total.
 """
 
 
@@ -141,6 +156,11 @@ def interpret(question: str, ledger: Ledger, client: LLMClient) -> Interpretatio
         completion: Completion = client.complete(
             system=SYSTEM, user=user, json_object=True
         )
+    except QuotaExhausted:
+        # Deliberately not swallowed. Every question after this one would score
+        # zero for never having been asked, and a scorecard cannot tell that
+        # apart from a model that got them wrong.
+        raise
     except LLMError as exc:
         return Interpretation(reason=str(exc), failed=True)
 
@@ -215,6 +235,14 @@ def to_query(payload: dict, ledger: Ledger) -> tuple[Query | None, str | None]:
 
     on_card = payload.get("on_card")
     on_card = True if on_card is True else None  # false and null both mean "all rows"
+
+    # `run` reads an unset direction as debit, so recording None would leave the
+    # query saying something other than what the engine did with it. Writing
+    # the default down is what keeps a query an honest record of the
+    # measurement -- and what lets two queries that execute identically compare
+    # equal, which the golden set is scored on.
+    if "direction" in reads and direction is None:
+        direction = Direction.DEBIT
 
     chosen = {
         "merchant": merchant,
