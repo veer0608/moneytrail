@@ -254,6 +254,24 @@ class OpenAICompatibleClient:
         time.sleep(delay)
 
 
+#: A `.env` written by PowerShell is UTF-16, and one written by `Set-Content`
+#: carries a UTF-8 BOM. Reading either as plain UTF-8 turns the key name into
+#: mojibake and the key silently fails to load, which looks exactly like
+#: having no key at all -- so the encoding is detected rather than assumed.
+_BOMS = (
+    (b"\xef\xbb\xbf", "utf-8-sig"),
+    (b"\xff\xfe", "utf-16"),
+    (b"\xfe\xff", "utf-16"),
+)
+
+
+def _decode(raw: bytes) -> str:
+    for bom, encoding in _BOMS:
+        if raw.startswith(bom):
+            return raw.decode(encoding, errors="replace")
+    return raw.decode("utf-8", errors="replace")
+
+
 def load_dotenv(root: Path | None = None) -> None:
     """Read `.env` into the environment without overwriting what is already set.
 
@@ -264,7 +282,11 @@ def load_dotenv(root: Path | None = None) -> None:
     target = (root or Path.cwd()) / ".env"
     if not target.is_file():
         return
-    for line in target.read_text(encoding="utf-8").splitlines():
+    try:
+        text = _decode(target.read_bytes())
+    except OSError:
+        return
+    for line in text.splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue

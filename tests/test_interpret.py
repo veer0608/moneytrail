@@ -8,6 +8,7 @@ something a test suite does on their behalf.
 from __future__ import annotations
 
 import json
+import os
 from datetime import date
 
 import pytest
@@ -28,6 +29,7 @@ from moneytrail.llm import (
     LLMError,
     Usage,
     build_client,
+    load_dotenv,
     price_of,
     resolve,
 )
@@ -118,6 +120,67 @@ class TestNoNetworkWithoutAKey:
 
         assert "parsed by the built-in parser" in out
         assert "note:" not in out
+
+
+class TestReadingDotEnv:
+    """Whatever the shell wrote it as, the key has to come out.
+
+    A .env written by PowerShell is UTF-16. Read as UTF-8 it becomes mojibake
+    and the key silently does not load -- indistinguishable from having no key,
+    which is the worst way for this to fail.
+    """
+
+    @pytest.fixture(autouse=True)
+    def clean(self, monkeypatch):
+        monkeypatch.delenv("GROQ_API_KEY", raising=False)
+
+    @pytest.mark.parametrize(
+        ("encoding", "label"),
+        [
+            ("utf-8", "plain utf-8"),
+            ("utf-8-sig", "utf-8 with a BOM, as Set-Content writes it"),
+            ("utf-16", "utf-16, as PowerShell's > writes it"),
+        ],
+    )
+    def test_the_key_loads_however_the_shell_encoded_it(
+        self, tmp_path, monkeypatch, encoding, label
+    ):
+        (tmp_path / ".env").write_text(
+            "GROQ_API_KEY=gsk_abc123\n", encoding=encoding
+        )
+
+        load_dotenv(tmp_path)
+
+        assert os.environ.get("GROQ_API_KEY") == "gsk_abc123", label
+
+    def test_a_key_already_set_is_not_overwritten(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("GROQ_API_KEY", "from-the-environment")
+        (tmp_path / ".env").write_text("GROQ_API_KEY=from-the-file\n", encoding="utf-8")
+
+        load_dotenv(tmp_path)
+
+        assert os.environ["GROQ_API_KEY"] == "from-the-environment"
+
+    def test_no_file_is_not_an_error(self, tmp_path):
+        load_dotenv(tmp_path)  # must not raise
+
+        assert "GROQ_API_KEY" not in os.environ
+
+    def test_comments_and_blank_lines_are_skipped(self, tmp_path):
+        (tmp_path / ".env").write_text(
+            "# a comment\n\nGROQ_API_KEY=gsk_xyz\n", encoding="utf-8"
+        )
+
+        load_dotenv(tmp_path)
+
+        assert os.environ.get("GROQ_API_KEY") == "gsk_xyz"
+
+    def test_quotes_around_the_value_are_stripped(self, tmp_path):
+        (tmp_path / ".env").write_text('GROQ_API_KEY="gsk_quoted"\n', encoding="utf-8")
+
+        load_dotenv(tmp_path)
+
+        assert os.environ.get("GROQ_API_KEY") == "gsk_quoted"
 
 
 class TestCost:
