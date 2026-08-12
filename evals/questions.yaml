@@ -1,0 +1,369 @@
+# The golden set.
+#
+# Each entry pairs a question with the *query* it should become -- never with a
+# number. The expected answer is computed by running the expected query through
+# the engine, which is why labelling this file costs nothing and cannot drift:
+# the engine is the oracle, and if the engine changes, the gold answers change
+# with it and stay correct.
+#
+# `query: null` means the right behaviour is to refuse. A refusal is a result,
+# not a failure, and scoring it as one is the only way the refusal-rate column
+# means anything.
+#
+# Three sets, scored separately:
+#
+#   deterministic  the regex parser handles these by design. It is a row in the
+#                  scorecard like any other model, and CI holds it at 100% here.
+#   model-only     one query expresses these, but no regex is going to parse
+#                  them. This is where a model has to earn its place.
+#   beyond-schema  no single query expresses these at all. The right answer is
+#                  to say so. Knowing the limits of the tool you are driving is
+#                  the skill being measured.
+
+ledger:
+  - tests/fixtures/hdfc_jan_may_2025.csv
+  - tests/fixtures/hdfc_card_july_2025.csv
+
+questions:
+
+  # --- deterministic: totals -------------------------------------------------
+  - ask: how much did I spend on rent in March?
+    set: deterministic
+    query: {intent: total, category: rent, direction: debit,
+            period: {start: 2025-03-01, end: 2025-03-31}}
+
+  - ask: how much did I spend on rent?
+    set: deterministic
+    query: {intent: total, category: rent, direction: debit}
+
+  - ask: how much did I spend in March?
+    set: deterministic
+    query: {intent: total, direction: debit,
+            period: {start: 2025-03-01, end: 2025-03-31}}
+
+  - ask: how much did I spend on Netflix?
+    set: deterministic
+    query: {intent: total, merchant: Netflix, direction: debit}
+
+  - ask: what did I pay Netflix?
+    set: deterministic
+    query: {intent: total, merchant: Netflix, direction: debit}
+
+  - ask: how much did I spend on food?
+    set: deterministic
+    query: {intent: total, category: food, direction: debit}
+
+  - ask: how much did I spend on entertainment in February?
+    set: deterministic
+    query: {intent: total, category: entertainment, direction: debit,
+            period: {start: 2025-02-01, end: 2025-02-28}}
+
+  - ask: how much did I spend in January?
+    set: deterministic
+    query: {intent: total, direction: debit,
+            period: {start: 2025-01-01, end: 2025-01-31}}
+
+  - ask: what did I spend from January to March?
+    set: deterministic
+    query: {intent: total, direction: debit,
+            period: {start: 2025-01-01, end: 2025-03-31}}
+
+  - ask: how much did I spend on rent in May 2025?
+    set: deterministic
+    query: {intent: total, category: rent, direction: debit,
+            period: {start: 2025-05-01, end: 2025-05-31}}
+
+  - ask: how much did I spend on shopping?
+    set: deterministic
+    query: {intent: total, category: shopping, direction: debit}
+
+  - ask: how much did I spend on groceries?
+    set: deterministic
+    query: {intent: total, category: groceries, direction: debit}
+
+  - ask: how much did I spend on fuel?
+    set: deterministic
+    query: {intent: total, category: fuel, direction: debit}
+
+  - ask: how much did I spend on my card?
+    set: deterministic
+    query: {intent: total, direction: debit, on_card: true}
+
+  - ask: total for July on the credit card
+    set: deterministic
+    query: {intent: total, direction: debit, on_card: true,
+            period: {start: 2025-07-01, end: 2025-07-31}}
+
+  # --- deterministic: money coming in ---------------------------------------
+  - ask: how much did I receive in March?
+    set: deterministic
+    query: {intent: total, direction: credit,
+            period: {start: 2025-03-01, end: 2025-03-31}}
+
+  - ask: how much income did I earn?
+    set: deterministic
+    query: {intent: total, direction: credit}
+
+  - ask: how much was credited in April?
+    set: deterministic
+    query: {intent: total, direction: credit,
+            period: {start: 2025-04-01, end: 2025-04-30}}
+
+  # --- deterministic: counts -------------------------------------------------
+  - ask: how many times did I pay Netflix?
+    set: deterministic
+    query: {intent: count, merchant: Netflix, direction: debit}
+
+  - ask: how many transactions in March?
+    set: deterministic
+    query: {intent: count, direction: debit,
+            period: {start: 2025-03-01, end: 2025-03-31}}
+
+  - ask: how often did I pay rent?
+    set: deterministic
+    query: {intent: count, category: rent, direction: debit}
+
+  - ask: how many times was I credited?
+    set: deterministic
+    query: {intent: count, direction: credit}
+
+  # --- deterministic: ranking ------------------------------------------------
+  - ask: biggest expenses in February?
+    set: deterministic
+    query: {intent: top, direction: debit,
+            period: {start: 2025-02-01, end: 2025-02-28}}
+
+  - ask: biggest expenses?
+    set: deterministic
+    query: {intent: top, direction: debit}
+
+  - ask: largest spend in March?
+    set: deterministic
+    query: {intent: top, direction: debit,
+            period: {start: 2025-03-01, end: 2025-03-31}}
+
+  - ask: what did I spend the most on?
+    set: deterministic
+    query: {intent: top, direction: debit}
+
+  # --- deterministic: patterns -----------------------------------------------
+  - ask: did the Myntra refund arrive?
+    set: deterministic
+    query: {intent: refunds, merchant: Myntra}
+
+  - ask: did I get any refunds?
+    set: deterministic
+    query: {intent: refunds}
+
+  - ask: did the Netflix refund arrive?
+    set: deterministic
+    query: {intent: refunds, merchant: Netflix}
+    why: there was no Netflix refund, and the engine has to say so rather than find one
+
+  - ask: what subscriptions am I paying?
+    set: deterministic
+    query: {intent: recurring}
+
+  - ask: what recurring charges do I have?
+    set: deterministic
+    query: {intent: recurring}
+
+  - ask: what do I pay every month?
+    set: deterministic
+    query: {intent: recurring}
+
+  - ask: list my regular payments
+    set: deterministic
+    query: {intent: recurring}
+
+  - ask: was I charged twice?
+    set: deterministic
+    query: {intent: duplicates}
+
+  - ask: any duplicate charges?
+    set: deterministic
+    query: {intent: duplicates}
+
+  - ask: anything charged to me twice over?
+    set: deterministic
+    query: {intent: duplicates}
+
+  # --- deterministic: refusals -----------------------------------------------
+  - ask: how much did I spend at Tesco in March?
+    set: deterministic
+    query: null
+    why: names a merchant these statements have never had
+
+  - ask: how many times did I pay Flipkart?
+    set: deterministic
+    query: null
+    why: same, without a preposition to hide behind
+
+  - ask: what is the meaning of life?
+    set: deterministic
+    query: null
+    why: not a question about this ledger
+
+  # --- model-only: an ordinary word the vocabulary guard has never seen ------
+  #
+  # These three refuse rather than answer, because "between", "took" and
+  # "single" are not in the parser's list of ordinary question words and an
+  # unrecognised word is treated as a name it cannot find. That is the
+  # deliberate bias -- a question wrongly refused is visible and gets rephrased
+  # -- but it is squarely a thing a model should handle and the regex does not.
+
+  - ask: how much between February and April?
+    set: model-only
+    query: {intent: total, direction: debit,
+            period: {start: 2025-02-01, end: 2025-04-30}}
+
+  - ask: which merchants took the most off me in February?
+    set: model-only
+    query: {intent: top, direction: debit,
+            period: {start: 2025-02-01, end: 2025-02-28}}
+
+  - ask: what's my single biggest outgoing?
+    set: model-only
+    query: {intent: top, direction: debit}
+
+  # --- model-only: phrasing no regex is going to catch -----------------------
+  - ask: what's my Netflix bill?
+    set: model-only
+    query: {intent: total, merchant: Netflix, direction: debit}
+
+  - ask: Netflix -- what's the damage?
+    set: model-only
+    query: {intent: total, merchant: Netflix, direction: debit}
+
+  - ask: show me everything from BigBasket
+    set: model-only
+    query: {intent: total, merchant: BigBasket, direction: debit}
+
+  - ask: everything I bought on plastic
+    set: model-only
+    query: {intent: total, direction: debit, on_card: true}
+
+  - ask: money that came in during April
+    set: model-only
+    query: {intent: total, direction: credit,
+            period: {start: 2025-04-01, end: 2025-04-30}}
+
+  - ask: what keeps coming out of my account?
+    set: model-only
+    query: {intent: recurring}
+
+  - ask: am I paying for anything I forgot about?
+    set: model-only
+    query: {intent: recurring}
+    why: the regex reads "paying" and answers with a total instead
+
+  - ask: did I get stung for the same thing more than once?
+    set: model-only
+    query: {intent: duplicates}
+
+  - ask: did Amazon ever pay me back?
+    set: model-only
+    query: {intent: refunds, merchant: Amazon}
+    why: the regex reads "pay" and answers with a total instead
+
+  - ask: did money come back from Myntra?
+    set: model-only
+    query: {intent: refunds, merchant: Myntra}
+
+  # --- model-only: dates a regex cannot express ------------------------------
+  - ask: what did I spend on food excluding refunds in the first half of the year?
+    set: model-only
+    query: {intent: total, category: food, direction: debit,
+            period: {start: 2025-01-01, end: 2025-06-30}}
+    why: '"excluding refunds" is direction=debit; the regex finds no period at all'
+
+  - ask: what did I spend in the first quarter?
+    set: model-only
+    query: {intent: total, direction: debit,
+            period: {start: 2025-01-01, end: 2025-03-31}}
+
+  - ask: what went out in the second quarter?
+    set: model-only
+    query: {intent: total, direction: debit,
+            period: {start: 2025-04-01, end: 2025-06-30}}
+
+  - ask: what did I spend in H1?
+    set: model-only
+    query: {intent: total, direction: debit,
+            period: {start: 2025-01-01, end: 2025-06-30}}
+
+  - ask: spending between the 10th and the 20th of March
+    set: model-only
+    query: {intent: total, direction: debit,
+            period: {start: 2025-03-10, end: 2025-03-20}}
+
+  - ask: how much did I spend before April?
+    set: model-only
+    query: {intent: total, direction: debit,
+            period: {start: 2025-01-01, end: 2025-03-31}}
+
+  - ask: what did entertainment cost me in the first four months?
+    set: model-only
+    query: {intent: total, category: entertainment, direction: debit,
+            period: {start: 2025-01-01, end: 2025-04-30}}
+
+  - ask: biggest spender in the back half of the year?
+    set: model-only
+    query: {intent: top, direction: debit,
+            period: {start: 2025-07-01, end: 2025-12-31}}
+
+  - ask: what came in over the whole of 2025?
+    set: model-only
+    query: {intent: total, direction: credit,
+            period: {start: 2025-01-01, end: 2025-12-31}}
+    why: the regex needs the digits "2025" present to find a year
+
+  - ask: rent for the spring months
+    set: model-only
+    query: {intent: total, category: rent, direction: debit,
+            period: {start: 2025-03-01, end: 2025-05-31}}
+
+  # --- model-only: a merchant named obliquely --------------------------------
+  - ask: how much has the landlord had off me?
+    set: model-only
+    query: {intent: total, merchant: Housing Rent Shobha Apartments, direction: debit}
+
+  - ask: what did the fuel stop cost?
+    set: model-only
+    query: {intent: total, merchant: Indian Oil, direction: debit}
+
+  # --- beyond-schema: one query cannot say this ------------------------------
+  - ask: compare March and April
+    set: beyond-schema
+    query: null
+    why: two measurements set against each other, and a query measures one thing
+
+  - ask: which subscription went up in price?
+    set: beyond-schema
+    query: null
+    why: a change over time; recurring reports a typical amount, not a trend
+
+  - ask: how much of my salary is left after rent?
+    set: beyond-schema
+    query: null
+    why: arithmetic between two results, which the engine will not do for you
+
+  - ask: am I spending more than last year?
+    set: beyond-schema
+    query: null
+    why: there is no last year in these statements, and no comparison in the schema
+
+  - ask: what will I spend next month?
+    set: beyond-schema
+    query: null
+    why: a prediction, and nothing here predicts
+
+  - ask: which merchant raised its prices the most?
+    set: beyond-schema
+    query: null
+    why: a trend across merchants, which no single query expresses
+
+  - ask: how many separate charges hit my card?
+    set: beyond-schema
+    query: null
+    why: count does not read on_card, so the honest answer is that it cannot be asked

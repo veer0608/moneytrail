@@ -14,7 +14,11 @@ dependencies = []
 pdf = ["pdfplumber>=0.11"]
 xlsx = ["openpyxl>=3.1"]
 formats = ["pdfplumber>=0.11", "openpyxl>=3.1"]
-dev = ["pytest>=8", "pdfplumber>=0.11", "openpyxl>=3.1", "reportlab>=4"]
+# Asking a model needs nothing installed: moneytrail/llm.py speaks HTTP over
+# the standard library, so `ask --model` works on a bare install. Only the
+# golden set needs a dependency, and only to read its own YAML.
+evals = ["pyyaml>=6"]
+dev = ["pytest>=8", "pdfplumber>=0.11", "openpyxl>=3.1", "reportlab>=4", "pyyaml>=6"]
 
 [project.scripts]
 moneytrail = "moneytrail.cli:main"

@@ -51,6 +51,12 @@ jobs:
             exit 1
           fi
 
+      # The golden set is scored against the built-in parser only. Model
+      # accuracy costs money and moves on someone else's schedule, so it is
+      # measured deliberately and never gates a merge.
+      - name: The built-in parser must stay perfect on what it covers
+        run: python -m evals.runner --gate
+
       - name: The report must stay self-contained
         run: |
           python -m moneytrail report tests/fixtures/hdfc_jan_may_2025.csv --out /tmp/r.html

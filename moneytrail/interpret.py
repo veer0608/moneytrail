@@ -77,6 +77,12 @@ Rules that matter more than being helpful:
   is missing>"}. Answering about a different merchant is worse than not
   answering.
 - If the question is not about this ledger at all, reply the same way.
+- One query measures one thing. If answering would need two measurements set
+  against each other ("compare March and April"), a change over time ("which
+  subscription went up in price"), arithmetic between results ("how much is
+  left after rent"), or a prediction, then no query expresses it: reply
+  {"intent": null, "reason": "<why>"}. Picking the nearest single measurement
+  and presenting it as the answer is the worst thing you can do here.
 - Relative dates ("last month", "this year") resolve against the ledger's last
   transaction date given below, never against the real today.
 - "spent" is direction "debit". "received", "earned", "paid me", "income" and
