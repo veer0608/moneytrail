@@ -13,6 +13,9 @@ import pytest
 
 from evals.runner import (
     BASELINE,
+    LABELS,
+    MARKERS,
+    REPO,
     SETS,
     Item,
     Scorecard,
@@ -20,8 +23,10 @@ from evals.runner import (
     deterministic_parser,
     load,
     main,
+    markdown,
     same_query,
     score,
+    splice,
 )
 from moneytrail.models import Direction
 from moneytrail.query import Period, Query, run
@@ -217,6 +222,63 @@ class TestScoring:
 
     def test_an_empty_scorecard_summarises_to_nothing(self):
         assert Scorecard(parser="none").summary() == {}
+
+
+class TestThePublishedTable:
+    def test_it_is_generated_from_the_run_not_typed(self, golden):
+        # A number in a README nobody can regenerate is a number nobody should
+        # believe, so the published table comes out of the scorer itself.
+        ledger, items = golden
+        card = score(BASELINE, deterministic_parser, ledger, items)
+
+        table = markdown([card], items)
+
+        assert "| parser | query acc | answer acc | refused | $/question | p50 |" in table
+        assert "100.0%" in table
+        assert BASELINE in table
+        for which in SETS:
+            assert LABELS[which] in table
+
+    def test_the_readme_still_has_somewhere_to_put_it(self):
+        text = (REPO / "README.md").read_text(encoding="utf-8")
+
+        for marker in MARKERS:
+            assert marker in text
+
+    def test_the_readme_carries_the_current_numbers(self, golden):
+        # Guards against the table being edited by hand, or going stale after
+        # the engine changes underneath it.
+        ledger, items = golden
+        card = score(BASELINE, deterministic_parser, ledger, items)
+        start, end = MARKERS
+        published = (
+            (REPO / "README.md")
+            .read_text(encoding="utf-8")
+            .split(start, 1)[1]
+            .split(end, 1)[0]
+            .strip()
+        )
+
+        assert published == markdown([card], items).strip()
+
+    def test_splicing_leaves_the_rest_of_the_file_alone(self, tmp_path):
+        start, end = MARKERS
+        target = tmp_path / "README.md"
+        target.write_text(f"before\n{start}\nold\n{end}\nafter\n", encoding="utf-8")
+
+        assert splice(target, "new")
+
+        text = target.read_text(encoding="utf-8")
+        assert text.startswith("before\n")
+        assert text.endswith("\nafter\n")
+        assert "new" in text and "old" not in text
+
+    def test_a_file_with_no_markers_is_not_written_to(self, tmp_path):
+        target = tmp_path / "README.md"
+        target.write_text("nothing to replace", encoding="utf-8")
+
+        assert not splice(target, "new")
+        assert target.read_text(encoding="utf-8") == "nothing to replace"
 
 
 class TestTheGate:

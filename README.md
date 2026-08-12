@@ -306,9 +306,10 @@ confident, plausible, wrong number, and nothing in the output would show it.
 Questions are parsed into a structured query; the arithmetic is done by code;
 every answer arrives carrying the rows it came from.
 
-That also leaves the right seam for a model later — let it translate English
-into one of these queries, and keep the engine computing the number. The model
-picks what to ask; it never gets to decide what the answer is.
+That also leaves the right seam for a model — let it translate English into one
+of these queries, and keep the engine computing the number. The model picks
+what to ask; it never gets to decide what the answer is. That seam is now
+built, and [measured](#letting-a-model-ask).
 
 Three consequences worth pointing at:
 
@@ -322,6 +323,98 @@ Three consequences worth pointing at:
 - **What it cannot do, it says.** Ask whether a refund arrived and never got
   one, and the answer notes that a refund you were owed but never issued leaves
   no trace in a statement.
+
+### Letting a model ask
+
+The regex parser understands the questions it was built for and nothing else.
+A model understands the phrasing but cannot be trusted with the arithmetic. So
+the model is given one job — turn English into a query — and the engine keeps
+the other:
+
+```bash
+python -m moneytrail ask --model llama-3.3-70b-versatile "what did I spend on food in the first half of the year" statements/
+```
+
+It is handed the query schema and *this ledger's own merchant and category
+names*, and returns JSON. That JSON is validated into the same `Query` the
+regex parser produces and executed by the same `run()`. A model that invents a
+merchant is refused by the same guard that refuses an unknown name typed by a
+person, because the engine would answer an invented merchant with a confident
+zero — and a confident zero reads exactly like *you spent nothing there*.
+
+The output names which parser worked the question out. With no key configured,
+`--model` falls back to the built-in parser and says so; without the flag,
+nothing reaches for a network even when a key is present.
+
+No dependency and nothing to install: `moneytrail/llm.py` speaks HTTP over the
+standard library, and Groq, OpenAI, Gemini, Together, OpenRouter and a local
+Ollama all take the same request shape, so swapping provider is one
+environment variable.
+
+### The scorecard
+
+`evals/questions.yaml` holds 71 questions, each paired with **the query it
+should become** — never with a number. Gold answers are produced by running
+the gold query through the engine, which is what made a golden set this size
+free to label and is why it cannot go stale: change the engine and the gold
+changes with it.
+
+```bash
+python -m evals.runner --models deterministic,llama-3.3-70b-versatile
+```
+
+Two accuracies, because they answer different questions. **Query accuracy**
+asks whether the parser requested the same measurement, field by field.
+**Answer accuracy** only asks whether the number matched, which a wrong query
+can manage by luck. Three question sets, because two would have been
+dishonest:
+
+| set | n | what it is |
+|---|---|---|
+| deterministic-covered | 39 | what the regex parser was built for. CI holds it at 100% here |
+| model-only | 25 | one query expresses these; no regex parses them |
+| beyond-schema | 7 | no single query expresses these at all — refusing is the right answer |
+
+<!-- SCORECARD -->
+
+**deterministic-covered** (39 questions)
+
+| parser | query acc | answer acc | refused | $/question | p50 |
+|---|---|---|---|---|---|
+| built-in regex parser | 100.0% | 100.0% | 7.7% | $0 | 0 ms |
+
+**model-only** (25 questions)
+
+| parser | query acc | answer acc | refused | $/question | p50 |
+|---|---|---|---|---|---|
+| built-in regex parser | 0.0% | 0.0% | 92.0% | $0 | 0 ms |
+
+**beyond-schema** (7 questions)
+
+| parser | query acc | answer acc | refused | $/question | p50 |
+|---|---|---|---|---|---|
+| built-in regex parser | 57.1% | 71.4% | 57.1% | $0 | 0 ms |
+
+**overall** (71 questions)
+
+| parser | query acc | answer acc | refused | $/question | p50 |
+|---|---|---|---|---|---|
+| built-in regex parser | 60.6% | 62.0% | 42.3% | $0 | 0 ms |
+
+<!-- /SCORECARD -->
+
+The third set exists because two of the questions this phase was designed
+around — *"compare March and April"*, *"which subscription went up in price"* —
+turn out not to be expressible in the query schema at all. Scoring them against
+an invented gold query would have measured nothing, so they are scored as
+refusals, and what gets measured is whether a parser knows the limits of the
+tool it is driving. The built-in parser manages 57% there: it reads
+"subscription" and answers, where the honest reply is that one query cannot say
+it. That is a finding, recorded rather than tuned away.
+
+The built-in parser is a row in the table at $0, and on the half it was built
+for it wins. CI gates it at 100% on those questions and never gates on a model,
+which costs money and moves on someone else's schedule.
 
 ## Roadmap
 

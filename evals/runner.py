@@ -318,6 +318,64 @@ def report(cards: Sequence[Scorecard], ledger: Ledger, items: Sequence[Item]) ->
     return "\n".join(out)
 
 
+MARKERS = ("<!-- SCORECARD -->", "<!-- /SCORECARD -->")
+LABELS = {
+    "deterministic": "deterministic-covered",
+    "model-only": "model-only",
+    "beyond-schema": "beyond-schema",
+}
+
+
+def markdown(cards: Sequence[Scorecard], items: Sequence[Item]) -> str:
+    """The same table, for the README.
+
+    Generated rather than typed. A number in a README that nobody can
+    regenerate is a number nobody should believe.
+    """
+    counts = {which: sum(i.which == which for i in items) for which in SETS}
+    blocks = []
+    for which in (*SETS, None):
+        label = which or "overall"
+        if which and not counts.get(which):
+            continue
+        heading = (
+            f"**{LABELS[which]}** ({counts[which]} questions)"
+            if which
+            else f"**overall** ({len(items)} questions)"
+        )
+        rows = [
+            heading,
+            "",
+            "| parser | query acc | answer acc | refused | $/question | p50 |",
+            "|---|---|---|---|---|---|",
+        ]
+        for card in cards:
+            summary = card.summary(which)
+            if not summary:
+                continue
+            rows.append(
+                f"| {card.parser} | {_pct(summary['query_accuracy'])} "
+                f"| {_pct(summary['answer_accuracy'])} "
+                f"| {_pct(summary['refusal_rate'])} "
+                f"| {_money(summary['cost_per_question'])} "
+                f"| {summary['p50_latency_ms']:.0f} ms |"
+            )
+        blocks.append("\n".join(rows))
+    return "\n\n".join(blocks)
+
+
+def splice(readme: Path, table: str) -> bool:
+    """Replace whatever sits between the scorecard markers."""
+    start, end = MARKERS
+    text = readme.read_text(encoding="utf-8")
+    if start not in text or end not in text:
+        return False
+    head, rest = text.split(start, 1)
+    _, tail = rest.split(end, 1)
+    readme.write_text(f"{head}{start}\n\n{table}\n\n{end}{tail}", encoding="utf-8")
+    return True
+
+
 def failures(card: Scorecard, which: str | None = None) -> str:
     rows = [r for r in (card.within(which) if which else card.results) if not r.query_ok]
     if not rows:
@@ -395,6 +453,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--show-failures", action="store_true")
     parser.add_argument("--json", type=Path, help="write the raw results here")
+    parser.add_argument(
+        "--update-readme",
+        action="store_true",
+        help="write this scorecard into README.md between the scorecard markers",
+    )
     args = parser.parse_args(argv)
 
     ledger, items = load()
@@ -438,6 +501,17 @@ def main(argv: list[str] | None = None) -> int:
         print("missed questions")
         for card in cards:
             print(failures(card, args.set))
+
+    if args.update_readme:
+        readme = REPO / "README.md"
+        if splice(readme, markdown(cards, items)):
+            print(f"wrote the scorecard into {readme.name}")
+        else:
+            print(
+                f"{readme.name} has no scorecard markers to write between",
+                file=sys.stderr,
+            )
+            return 2
 
     if args.json:
         args.json.write_text(
