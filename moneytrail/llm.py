@@ -91,11 +91,11 @@ PROVIDERS: dict[str, Provider] = {
 #: downstream reports it as unknown rather than as zero.
 PRICES_READ_ON = "2026-08-12"
 PRICES: dict[str, tuple[float, float]] = {
-    # groq -- https://groq.com/pricing
+    # groq -- https://console.groq.com/docs/models, read 2026-08-12
     "llama-3.3-70b-versatile": (0.59, 0.79),
     "llama-3.1-8b-instant": (0.05, 0.08),
-    "openai/gpt-oss-120b": (0.15, 0.75),
-    "openai/gpt-oss-20b": (0.10, 0.50),
+    "openai/gpt-oss-120b": (0.15, 0.60),
+    "openai/gpt-oss-20b": (0.075, 0.30),
     # openai -- https://openai.com/api/pricing
     "gpt-4o-mini": (0.15, 0.60),
     "gpt-4o": (2.50, 10.00),

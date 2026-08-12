@@ -245,9 +245,14 @@ class TestThePublishedTable:
         for marker in MARKERS:
             assert marker in text
 
-    def test_the_readme_carries_the_current_numbers(self, golden):
-        # Guards against the table being edited by hand, or going stale after
+    def test_the_readme_carries_the_current_baseline_numbers(self, golden):
+        # Guards against the table being edited by hand, or going stale when
         # the engine changes underneath it.
+        #
+        # Only the baseline row is checked, and deliberately so: a model row
+        # cannot be regenerated without paying for it, so a test that demanded
+        # one would either cost money on every run or quietly stop being run.
+        # The baseline is free, and it is the row CI already depends on.
         ledger, items = golden
         card = score(BASELINE, deterministic_parser, ledger, items)
         start, end = MARKERS
@@ -256,10 +261,16 @@ class TestThePublishedTable:
             .read_text(encoding="utf-8")
             .split(start, 1)[1]
             .split(end, 1)[0]
-            .strip()
         )
+        rows = [
+            line
+            for line in markdown([card], items).splitlines()
+            if line.startswith(f"| {BASELINE} |")
+        ]
 
-        assert published == markdown([card], items).strip()
+        assert rows, "the generated table has no baseline row to compare"
+        for row in rows:
+            assert row in published, f"README no longer matches the scorer:\n{row}"
 
     def test_splicing_leaves_the_rest_of_the_file_alone(self, tmp_path):
         start, end = MARKERS

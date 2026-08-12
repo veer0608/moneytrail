@@ -16,6 +16,7 @@ than a table arranged to flatter the expensive option.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import statistics
 import sys
@@ -48,6 +49,24 @@ REPO = HERE.parent
 QUESTIONS = HERE / "questions.yaml"
 SETS = ("deterministic", "model-only", "beyond-schema")
 BASELINE = "built-in regex parser"
+SPLITS = ("dev", "test")
+
+#: Share of questions held back. Nothing tuned against dev may be reported on
+#: test without saying so.
+TEST_SHARE = 40
+
+
+def split_of(ask: str) -> str:
+    """Which half a question belongs to, derived from the question itself.
+
+    A prompt improved by staring at the questions it got wrong, then scored on
+    those same questions, reports a number fitted to its own answer key. So the
+    split is a hash of the text rather than a field anyone can edit: whoever is
+    tuning the prompt does not get to choose what they are graded on, and the
+    assignment is reproducible by anyone who doubts it.
+    """
+    digest = hashlib.sha256(ask.strip().lower().encode()).hexdigest()
+    return "test" if int(digest[:8], 16) % 100 < TEST_SHARE else "dev"
 
 
 # --- the golden set --------------------------------------------------------
@@ -59,6 +78,10 @@ class Item:
     which: str
     expected: Query | None
     why: str = ""
+
+    @property
+    def split(self) -> str:
+        return split_of(self.ask)
 
 
 def load(path: Path = QUESTIONS) -> tuple[Ledger, list[Item]]:
@@ -210,8 +233,13 @@ class Scorecard:
     def within(self, which: str) -> list[Result]:
         return [r for r in self.results if r.item.which == which]
 
-    def summary(self, which: str | None = None) -> dict:
+    def in_split(self, split: str) -> list[Result]:
+        return [r for r in self.results if r.item.split == split]
+
+    def summary(self, which: str | None = None, split: str | None = None) -> dict:
         rows = self.results if which is None else self.within(which)
+        if split is not None:
+            rows = [r for r in rows if r.item.split == split]
         if not rows:
             return {}
         latencies = [r.usage.latency_ms for r in rows if r.usage]
@@ -292,6 +320,9 @@ def report(cards: Sequence[Scorecard], ledger: Ledger, items: Sequence[Item]) ->
         f"{len(ledger.merchants)} merchants",
         f"{len(items)} questions: "
         + ", ".join(f"{n} {which}" for which, n in counts.items() if n),
+        f"split: {sum(i.split == 'dev' for i in items)} dev, "
+        f"{sum(i.split == 'test' for i in items)} test "
+        f"(assigned by hash of the question, so tuning cannot pick its own marking)",
         "",
     ]
     headings = {
@@ -441,6 +472,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--set", choices=SETS, help="score only one question set")
     parser.add_argument(
+        "--split",
+        choices=SPLITS,
+        help=(
+            "score only one half. Tune a prompt against dev; report test, "
+            "which nothing was tuned against"
+        ),
+    )
+    parser.add_argument(
         "--limit", type=int, help="first N questions only -- for a cheap smoke run"
     )
     parser.add_argument(
@@ -463,6 +502,8 @@ def main(argv: list[str] | None = None) -> int:
     ledger, items = load()
     if args.set:
         items = [i for i in items if i.which == args.set]
+    if args.split:
+        items = [i for i in items if i.split == args.split]
     if args.limit:
         items = items[: args.limit]
 
@@ -530,6 +571,15 @@ def main(argv: list[str] | None = None) -> int:
                                 "answer_ok": r.answer_ok,
                                 "refused": r.refused,
                                 "note": r.note,
+                                # Recorded so a correction to the price table
+                                # never means paying for the run again.
+                                "model": r.usage.model if r.usage else "",
+                                "prompt_tokens": r.usage.prompt_tokens if r.usage else 0,
+                                "completion_tokens": (
+                                    r.usage.completion_tokens if r.usage else 0
+                                ),
+                                "cost_usd": r.usage.cost_usd if r.usage else 0.0,
+                                "latency_ms": round(r.usage.latency_ms, 1) if r.usage else 0.0,
                             }
                             for r in card.results
                         ],
