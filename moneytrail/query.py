@@ -7,9 +7,11 @@ confident, plausible, wrong number, and nothing about the output would show it.
 So questions are parsed into a structured query and the arithmetic is done by
 code, which means every answer arrives carrying the exact rows it came from.
 
-That also leaves the right seam for a model later: let it translate English into
-one of these queries, and keep the engine computing the number. The model picks
-what to ask; it never gets to decide what the answer is.
+The seam that leaves for a model is an explicit one. `parse_question` turns
+English into a `Query`; `run` executes a `Query`. Anything that can produce a
+`Query` -- the regex parser here, a model elsewhere -- gets the same arithmetic
+and the same refusals. The model picks what to ask; it never gets to decide
+what the answer is.
 """
 
 from __future__ import annotations
@@ -59,6 +61,41 @@ class Period:
 
     def holds(self, when: date) -> bool:
         return self.start <= when <= self.end
+
+
+@dataclass(frozen=True)
+class Query:
+    """What was asked, as structure rather than as English.
+
+    This is the seam. A regex builds one of these today and a model can build
+    one instead; either way `run` executes it and the arithmetic is the same
+    code, so a model cannot reach the number except by choosing the question.
+    """
+
+    intent: str
+    merchant: str | None = None
+    category: str | None = None
+    period: Period | None = None
+    direction: Direction | None = None
+    on_card: bool | None = None
+
+
+#: The fields each intent actually reads. `run` honours exactly these, and a
+#: query carrying anything else is malformed rather than partly obeyed -- an
+#: ignored filter is a confident answer to a narrower question than the one
+#: asked, which is the failure this module exists to prevent. `top` ranks
+#: merchants against each other, so filtering it to one is meaningless; the
+#: pattern intents read the whole ledger by construction.
+READS: dict[str, tuple[str, ...]] = {
+    "total": ("merchant", "category", "period", "direction", "on_card"),
+    "count": ("merchant", "category", "period", "direction"),
+    "top": ("category", "period", "direction"),
+    "refunds": ("merchant", "period"),
+    "recurring": (),
+    "duplicates": (),
+}
+
+INTENTS: tuple[str, ...] = tuple(READS)
 
 
 @dataclass(frozen=True)
@@ -117,34 +154,91 @@ def build_ledger(statements: Sequence[Statement | CardStatement]) -> Ledger:
     return Ledger(rows=tuple(rows), statements=tuple(statements))
 
 
+CANNOT_ANSWER = (
+    "I can answer totals, counts, biggest-spend, refunds, duplicates and "
+    "subscriptions. Try: how much did I spend on food in March?"
+)
+
+
 def ask(question: str, ledger: Ledger) -> Answer:
+    """Parse, then execute. The two halves are separable on purpose."""
     text = question.lower().strip()
     if not ledger.rows:
         return Answer(question, "no statements loaded", understood=False)
 
+    query = parse_question(text, ledger)
+    if query is None:
+        return Answer(question, CANNOT_ANSWER, understood=False)
+
+    refusal = refuse_unknown_words(question, ledger, query, text)
+    if refusal is not None:
+        return refusal
+    return run(query, ledger, question=question)
+
+
+def parse_question(text: str, ledger: Ledger) -> Query | None:
+    """English in, a `Query` out -- or None when it was not a question we take.
+
+    Fields the chosen intent does not read are left unset even when the text
+    would support them, so that the query says exactly what will be executed
+    and no more. See `READS`.
+    """
+    text = text.lower().strip()
     period = parse_period(text, ledger.last_date)
     merchant = find_merchant(text, ledger)
     category = find_category(text, ledger)
 
     if re.search(r"\brefund|money back|got it back\b", text):
-        return _refunds(question, ledger, merchant, period)
+        return Query("refunds", merchant=merchant, period=period)
     if re.search(r"\bsubscription|recurring|every month|regular(ly)?\b", text):
-        return _recurring(question, ledger)
+        return Query("recurring")
     if re.search(r"\btwice|duplicate|double[- ]?charg|charged again\b", text):
-        return _duplicates(question, ledger)
+        return Query("duplicates")
     if re.search(r"\bbiggest|largest|top\b|\bmost\b", text):
-        return _top(question, ledger, period, category, text)
+        # Ranking is over spending, so the direction is not up for negotiation.
+        return Query(
+            "top", category=category, period=period, direction=Direction.DEBIT
+        )
     if re.search(r"\bhow many|how often|how frequently\b", text):
-        return _count(question, ledger, merchant, category, period, text)
+        return Query(
+            "count",
+            merchant=merchant,
+            category=category,
+            period=period,
+            direction=_direction_for(text),
+        )
     if re.search(r"\bhow much|total|spend|spent|pay|paid|paying|cost\b", text):
-        return _total(question, ledger, merchant, category, period, text)
+        return Query(
+            "total",
+            merchant=merchant,
+            category=category,
+            period=period,
+            direction=_direction_for(text),
+            on_card=True if wants_card_only(text, ledger) else None,
+        )
+    return None
 
-    return Answer(
-        question,
-        "I can answer totals, counts, biggest-spend, refunds, duplicates and "
-        "subscriptions. Try: how much did I spend on food in March?",
-        understood=False,
-    )
+
+def run(query: Query, ledger: Ledger, *, question: str = "") -> Answer:
+    """Execute a query. Every figure this project reports is computed here.
+
+    `question` is carried through for display only -- it never reaches the
+    arithmetic, which is what lets the eval derive gold answers by running a
+    query with no English attached to it at all.
+    """
+    if query.intent == "refunds":
+        return _refunds(question, ledger, query.merchant, query.period)
+    if query.intent == "recurring":
+        return _recurring(question, ledger)
+    if query.intent == "duplicates":
+        return _duplicates(question, ledger)
+    if query.intent == "top":
+        return _top(question, ledger, query)
+    if query.intent == "count":
+        return _count(question, ledger, query)
+    if query.intent == "total":
+        return _total(question, ledger, query)
+    return Answer(question, f"no such query: {query.intent!r}", understood=False)
 
 
 # --- filters ---------------------------------------------------------------
@@ -356,13 +450,47 @@ def _describe(merchant, category, period, direction) -> tuple[str, ...]:
 # --- intents ---------------------------------------------------------------
 
 
-def _refuse_unknown(question, ledger, merchant, category, text) -> Answer | None:
-    """Refuse rather than silently answer a broader question."""
-    if merchant is not None:
+#: Intents where an unrecognised name changes the question rather than
+#: decorating it. The pattern intents survey the whole ledger, so a stray word
+#: cannot narrow them into answering something else.
+_GUARDED = frozenset({"total", "count", "top"})
+
+
+def refuse_unknown_words(question, ledger, query: Query, text: str) -> Answer | None:
+    """Refuse rather than silently answer a broader question.
+
+    Guards the parsed-from-English path, where the danger is a name in the text
+    that no filter picked up. A query built by a model is guarded by
+    `refuse_unknown_fields` instead -- there the danger is a name it invented.
+    """
+    if query.intent not in _GUARDED or query.merchant is not None:
         return None
-    strangers = unrecognised(text, ledger, merchant, category)
+    strangers = unrecognised(text, ledger, query.merchant, query.category)
     if not strangers:
         return None
+    return _refusal(question, strangers)
+
+
+def refuse_unknown_fields(question, ledger, query: Query) -> Answer | None:
+    """Refuse a query naming a merchant or category this ledger never had.
+
+    The engine would answer such a query with a confident zero, which reads
+    exactly like "you spent nothing there" rather than "no such merchant".
+    """
+    strangers = tuple(
+        name
+        for name, known in (
+            (query.merchant, ledger.merchants),
+            (query.category, ledger.categories),
+        )
+        if name is not None and name not in known
+    )
+    if not strangers:
+        return None
+    return _refusal(question, strangers)
+
+
+def _refusal(question: str, strangers: tuple[str, ...]) -> Answer:
     named = ", ".join(f'"{word}"' for word in strangers)
     return Answer(
         question,
@@ -375,12 +503,10 @@ def _refuse_unknown(question, ledger, merchant, category, text) -> Answer | None
     )
 
 
-def _total(question, ledger, merchant, category, period, text) -> Answer:
-    refusal = _refuse_unknown(question, ledger, merchant, category, text)
-    if refusal is not None:
-        return refusal
-    direction = _direction_for(text)
-    on_card = True if wants_card_only(text, ledger) else None
+def _total(question, ledger, query: Query) -> Answer:
+    merchant, category, period = query.merchant, query.category, query.period
+    direction = query.direction or Direction.DEBIT
+    on_card = query.on_card
     rows = select(
         ledger,
         merchant=merchant,
@@ -415,11 +541,9 @@ def _total(question, ledger, merchant, category, period, text) -> Answer:
     )
 
 
-def _count(question, ledger, merchant, category, period, text) -> Answer:
-    refusal = _refuse_unknown(question, ledger, merchant, category, text)
-    if refusal is not None:
-        return refusal
-    direction = _direction_for(text)
+def _count(question, ledger, query: Query) -> Answer:
+    merchant, category, period = query.merchant, query.category, query.period
+    direction = query.direction or Direction.DEBIT
     rows = select(
         ledger, merchant=merchant, category=category, period=period, direction=direction
     )
@@ -436,12 +560,10 @@ def _count(question, ledger, merchant, category, period, text) -> Answer:
     )
 
 
-def _top(question, ledger, period, category, text) -> Answer:
-    refusal = _refuse_unknown(question, ledger, None, category, text)
-    if refusal is not None:
-        return refusal
-
-    rows = select(ledger, category=category, period=period, direction=Direction.DEBIT)
+def _top(question, ledger, query: Query) -> Answer:
+    category, period = query.category, query.period
+    direction = query.direction or Direction.DEBIT
+    rows = select(ledger, category=category, period=period, direction=direction)
     if not rows:
         return Answer(question, "nothing matched", caveats=("no rows in that period",))
 
@@ -460,7 +582,7 @@ def _top(question, ledger, period, category, text) -> Answer:
         # first entry, or the answer is only partly checkable.
         rows=tuple(row for row in rows if row.match.name in named),
         amount=ranked[0][1],
-        filters=_describe(None, category, period, Direction.DEBIT),
+        filters=_describe(None, category, period, direction),
     )
 
 

@@ -11,9 +11,22 @@ from datetime import date
 
 import pytest
 
+from dataclasses import fields
+
 from moneytrail import Direction, parse_statement
 from moneytrail.cli import main
-from moneytrail.query import Period, ask, build_ledger, find_merchant, parse_period
+from moneytrail.query import (
+    READS,
+    Period,
+    Query,
+    ask,
+    build_ledger,
+    find_merchant,
+    parse_period,
+    parse_question,
+    refuse_unknown_fields,
+    run,
+)
 
 
 @pytest.fixture
@@ -157,6 +170,104 @@ class TestUnderstanding:
 
         assert answer.amount is None
         assert answer.rows == ()
+
+
+class TestTheSeam:
+    """Parsing and execution are separable, which is what lets a model replace
+    the first half without getting anywhere near the arithmetic."""
+
+    ASKABLE = [
+        "how much did i spend on rent in march",
+        "how much did i spend on netflix",
+        "how much did i receive in march",
+        "how many times did i pay netflix",
+        "biggest expenses in february",
+        "did the myntra refund arrive",
+        "what subscriptions am i paying",
+        "was i charged twice",
+    ]
+
+    @pytest.mark.parametrize("question", ASKABLE)
+    def test_asking_is_exactly_parsing_then_running(self, ledger, question):
+        query = parse_question(question, ledger)
+
+        assert ask(question, ledger) == run(query, ledger, question=question)
+
+    def test_a_question_becomes_a_query(self, ledger):
+        query = parse_question("how much did i spend on rent in march", ledger)
+
+        assert query == Query(
+            "total",
+            category="rent",
+            period=Period(date(2025, 3, 1), date(2025, 3, 31), "March 2025"),
+            direction=Direction.DEBIT,
+        )
+
+    def test_a_query_runs_with_no_english_attached_to_it(self, ledger):
+        # The eval derives its gold answers this way: no question, just a query
+        # and the engine. That is what makes labelling the golden set free.
+        answer = run(Query("total", merchant="Netflix"), ledger)
+
+        assert answer.amount == ask("how much did i spend on netflix", ledger).amount
+        assert answer.question == ""
+
+    @pytest.mark.parametrize(
+        ("question", "expected"),
+        [
+            # "in march" parses to a period, but a subscription sweep reads the
+            # whole ledger. Recording the period would imply a filter that is
+            # never applied -- and a query that lies about what it did is worse
+            # than one that admits it looked everywhere.
+            ("what subscriptions am i paying in march", Query("recurring")),
+            ("was i charged twice in march", Query("duplicates")),
+        ],
+    )
+    def test_fields_an_intent_never_reads_are_left_unset(
+        self, ledger, question, expected
+    ):
+        assert parse_question(question, ledger) == expected
+
+    def test_the_parser_only_ever_sets_fields_its_intent_reads(self, ledger):
+        # Guards the property the golden set is scored on: two queries that
+        # would execute identically have to compare equal.
+        optional = {field.name for field in fields(Query)} - {"intent"}
+        for question in self.ASKABLE + [
+            "how much did i spend on my card",
+            "biggest food spend in march",
+            "how often did i order swiggy",
+            "did i get any refunds in april",
+        ]:
+            query = parse_question(question, ledger)
+            for name in optional - set(READS[query.intent]):
+                assert getattr(query, name) is None, (
+                    f"{question!r} set {name} on a {query.intent} query, which "
+                    f"never reads it"
+                )
+
+    def test_a_question_it_does_not_take_yields_no_query(self, ledger):
+        assert parse_question("what is the meaning of life", ledger) is None
+
+    def test_an_intent_that_does_not_exist_is_declined_not_crashed(self, ledger):
+        # A model will eventually hand this in. Nothing it can emit should
+        # produce a traceback.
+        answer = run(Query("vibes"), ledger)
+
+        assert not answer.understood
+        assert answer.amount is None
+        assert answer.rows == ()
+
+    def test_a_merchant_the_ledger_never_had_is_refused_not_answered(self, ledger):
+        # The text guard cannot catch this: there is no text. A model that
+        # invents "Tesco" would otherwise get a confident zero back, which
+        # reads as "you spent nothing there" rather than "no such merchant".
+        refusal = refuse_unknown_fields("q", ledger, Query("total", merchant="Tesco"))
+
+        assert refusal is not None
+        assert not refusal.understood
+        assert "Tesco" in refusal.headline
+
+    def test_a_merchant_the_ledger_does_have_passes_the_guard(self, ledger):
+        assert refuse_unknown_fields("q", ledger, Query("total", merchant="Netflix")) is None
 
 
 class TestCommand:
