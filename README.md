@@ -393,6 +393,7 @@ was never shown.
 | openai/gpt-oss-120b | 100.0% | 100.0% | 18.8% | $0.000272 | 1145 ms |
 | openai/gpt-oss-20b | 100.0% | 100.0% | 18.8% | $0.00014 | 708 ms |
 | llama-3.1-8b-instant | 81.2% | 87.5% | 18.8% | $0.000056 | 380 ms |
+| llama-3.3-70b-versatile | 93.8% | 93.8% | 18.8% | $0.000654 | 360 ms |
 
 **model-only** (10 questions)
 
@@ -402,6 +403,7 @@ was never shown.
 | openai/gpt-oss-120b | 80.0% | 90.0% | 10.0% | $0.000318 | 1263 ms |
 | openai/gpt-oss-20b | 80.0% | 90.0% | 10.0% | $0.000171 | 872 ms |
 | llama-3.1-8b-instant | 60.0% | 80.0% | 0.0% | $0.000057 | 532 ms |
+| llama-3.3-70b-versatile | 90.0% | 100.0% | 0.0% | $0.000668 | 375 ms |
 
 **beyond-schema** (3 questions)
 
@@ -411,6 +413,7 @@ was never shown.
 | openai/gpt-oss-120b | 66.7% | 66.7% | 66.7% | $0.000306 | 1119 ms |
 | openai/gpt-oss-20b | 66.7% | 66.7% | 66.7% | $0.000143 | 763 ms |
 | llama-3.1-8b-instant | 33.3% | 33.3% | 33.3% | $0.000055 | 509 ms |
+| llama-3.3-70b-versatile | 66.7% | 66.7% | 66.7% | $0.00064 | 350 ms |
 
 **overall** (29 questions)
 
@@ -420,14 +423,32 @@ was never shown.
 | openai/gpt-oss-120b | 89.7% | 93.1% | 20.7% | $0.000291 | 1150 ms |
 | openai/gpt-oss-20b | 89.7% | 93.1% | 20.7% | $0.000151 | 734 ms |
 | llama-3.1-8b-instant | 69.0% | 79.3% | 13.8% | $0.000056 | 397 ms |
+| llama-3.3-70b-versatile | 89.7% | 93.1% | 17.2% | $0.000657 | 358 ms |
 
 <!-- /SCORECARD -->
 
-**A model earns its place on the half the regex cannot reach, and the big one
-is not worth it.** `gpt-oss-20b` matches `gpt-oss-120b` exactly — same query
-accuracy, same answer accuracy, same refusals — at **half the cost and twice
-the speed**. Four times the parameters buys nothing on this task, which is the
-kind of thing a scorecard is for and a vibe-check never tells you.
+**A model earns its place on the half the regex cannot reach.** The parser
+scores 0% on model-only by construction; the models reach 80–90%.
+
+**And size is not what buys it.** Three models tie at exactly 89.7% query and
+93.1% answer accuracy, across a **4.4× spread in price**:
+
+| model | $/question | vs cheapest |
+|---|---|---|
+| `openai/gpt-oss-20b` | $0.000151 | 1.0× |
+| `openai/gpt-oss-120b` | $0.000291 | 1.9× |
+| `llama-3.3-70b-versatile` | $0.000657 | 4.4× |
+
+They get there differently — `llama-3.3-70b` is the best on the model-only half
+(90% query, 100% answer) and pays for it by slipping to 93.8% on the questions
+the regex parser handles perfectly, while the two `gpt-oss` models hold 100%
+there. On the whole held-out set that nets out identical. `gpt-oss-20b` is the
+one to run: same accuracy, a quarter of the price of the 70B, and the fastest
+of the three at the p50.
+
+Below that, `llama-3.1-8b-instant` at a third of the price is genuinely worse
+(69% query), so the cheap end does have a floor — the finding is that the
+ceiling arrives early, not that size never matters.
 
 **And the prompt tuning did not survive contact with the held-out half.**
 Iterating against dev failures moved the test half from 27/29 to 26/29 on
