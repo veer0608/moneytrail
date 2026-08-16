@@ -1,5 +1,7 @@
 # moneytrail
 
+[![ci](https://github.com/veer0608/moneytrail/actions/workflows/ci.yml/badge.svg)](https://github.com/veer0608/moneytrail/actions/workflows/ci.yml)
+
 Turn bank statements into a ledger that **provably adds up**, then ask it the
 questions no banking app will answer.
 
