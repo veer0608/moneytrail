@@ -34,7 +34,7 @@ services:
       # line to change and one place to check against the Gumroad listing --
       # a price that disagrees with its own checkout is worse than no price.
       - key: MONEYTRAIL_PRICE
-        value: "₹499"
+        value: "₹299"
       - key: MONEYTRAIL_PRICE_PERIOD
         value: "month"
 

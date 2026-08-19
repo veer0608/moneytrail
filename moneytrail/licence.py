@@ -53,7 +53,7 @@ PRODUCT_ENV = "MONEYTRAIL_GUMROAD_PRODUCT_ID"
 #: Where to send someone who needs a key. Shown by the page, never hardcoded
 #: into it, so the listing can move without a redeploy of the front-end.
 BUY_URL_ENV = "MONEYTRAIL_BUY_URL"
-#: What the page says it costs, e.g. "₹499". Kept out of the HTML because a
+#: What the page says it costs, e.g. "₹299". Kept out of the HTML because a
 #: price is the thing most likely to change and the worst thing to have to
 #: hunt for in markup -- and because it must match Gumroad exactly, which is
 #: only true if one of them is not a copy.
