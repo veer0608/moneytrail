@@ -29,27 +29,50 @@ jobs:
 
       # The unit tests could all pass while the thing the project exists to do
       # quietly stopped working, so the gate is exercised end to end as well.
+      #
+      # The list is checked against the fixtures directory by a test, because a
+      # hand-maintained one drifts: five fixtures -- including both PDFs that
+      # exercise the word-position parser -- sat here unlisted while their unit
+      # tests passed, so that whole path could have broken with CI still green.
       - name: Every clean fixture must reconcile
         run: |
-          python -m moneytrail check --no-prompt \
-            tests/fixtures/hdfc_april_2025.csv \
-            tests/fixtures/hdfc_april_2025.pdf \
-            tests/fixtures/hdfc_april_2025.xls \
-            tests/fixtures/hdfc_card_july_2025.csv \
-            tests/fixtures/hdfc_jan_may_2025.csv \
-            tests/fixtures/hdfc_july_2025.csv \
-            tests/fixtures/hdfc_aug_2025.csv \
-            tests/fixtures/icici_aug_2025.csv
+          set -e
+          CLEAN="
+            hdfc_april_2025.csv
+            hdfc_april_2025.pdf
+            hdfc_april_2025.xls
+            hdfc_april_2025_unruled.pdf
+            hdfc_card_july_2025.csv
+            hdfc_jan_may_2025.csv
+            hdfc_july_2025.csv
+            hdfc_aug_2025.csv
+            icici_aug_2025.csv
+            icici_may_2025_signed.csv
+            icici_currency_headers.csv
+            icici_july_2026_wrapped.pdf
+            axis_stated_totals.csv
+          "
+          for clean in $CLEAN; do
+            echo "--- $clean"
+            python -m moneytrail check --no-prompt "tests/fixtures/$clean"
+          done
 
-      # A checker that never fails is not a checker. The deliberately broken
-      # fixture has to keep being caught.
-      - name: And the broken one must still be caught
+      # A checker that never fails is not a checker. Each deliberately broken
+      # fixture has to keep being caught, and they break differently: one loses
+      # a row from the middle, where the chain check sees it, and one loses the
+      # last row, where only the bank's own stated total does.
+      - name: And the broken ones must still be caught
         run: |
-          if python -m moneytrail check --no-prompt \
-               tests/fixtures/hdfc_april_2025_dropped_row.csv; then
-            echo "::error::a statement with a dropped row reconciled - the gate is broken"
-            exit 1
-          fi
+          BROKEN="
+            hdfc_april_2025_dropped_row.csv
+            axis_stated_totals_dropped.csv
+          "
+          for broken in $BROKEN; do
+            if python -m moneytrail check --no-prompt "tests/fixtures/$broken"; then
+              echo "::error::$broken reconciled - the gate is broken"
+              exit 1
+            fi
+          done
 
       # The golden set is scored against the built-in parser only. Model
       # accuracy costs money and moves on someone else's schedule, so it is

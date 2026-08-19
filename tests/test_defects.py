@@ -152,3 +152,49 @@ def test_the_spending_count_excludes_refunds(patterns_path):
         )
         if match.name == "Amazon" and txn.direction is Direction.DEBIT
     )
+
+
+# --- the gate that guards the gate ------------------------------------------
+
+
+def test_every_fixture_is_named_in_the_ci_gate():
+    """A fixture CI never runs is a format nobody is checking end to end.
+
+    The workflow lists fixtures by hand, and a hand-maintained list drifts: the
+    unruled and wrapped PDFs were committed with tests but were not in it, so
+    the whole word-position path could have broken and CI would have stayed
+    green. This fails the moment a fixture is added without deciding which side
+    of the gate it belongs on.
+
+    Additions go in the clean list if they reconcile and the broken list if
+    they do not. Anything genuinely neither -- a locked file, a fragment used
+    only by a unit test -- goes in EXEMPT below, with a reason.
+    """
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    workflow = (root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    #: Not reconcilable on their own, and each for a stated reason.
+    EXEMPT = {
+        # Needs a password; the gate runs --no-prompt.
+        "hdfc_april_2025_locked.pdf",
+        # Encrypted twin of the workbook, same reason.
+        "hdfc_april_2025_encrypted.xlsx",
+    }
+
+    fixtures = {
+        path.name
+        for path in (root / "tests" / "fixtures").iterdir()
+        if path.suffix.lower() in {".csv", ".tsv", ".pdf", ".xls", ".xlsx"}
+    }
+
+    missing = sorted(
+        name for name in fixtures - EXEMPT if name not in workflow
+    )
+
+    assert not missing, (
+        "these fixtures are not exercised by the CI gate: "
+        + ", ".join(missing)
+        + " -- add each to the clean or the broken list in ci.yml"
+    )

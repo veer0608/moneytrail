@@ -9,7 +9,7 @@ reconciliation comes before categorisation; this file is how to work in it.
 - `moneytrail/parsers/words.py` — grid recovery for PDFs that draw no table
 - `moneytrail/web.py` — the hosted front-end's core, framework-free; `api.py` is
   the FastAPI layer and `static/index.html` the single page
-- `tests/` — 460 tests, run from the repo root
+- `tests/` — 466 tests, run from the repo root
 - `evals/` — `runner.py` and `questions.yaml` (the golden set), plus saved run JSON
 - `statements/` — sample inputs
 - `scripts/` — fixture builders
@@ -21,7 +21,7 @@ Run from the repo root. Python 3.11.
 
 ```bash
 pip install -e ".[dev]"     # pytest + pdfplumber + openpyxl + reportlab + pyyaml
-python -m pytest -q         # 460 tests
+python -m pytest -q         # 466 tests
 moneytrail --help           # console script, defined in pyproject.toml
 python -m moneytrail.api    # the hosted front-end on :8000, needs the web extra
 ```
@@ -75,6 +75,17 @@ this project reads well.
   gaps are two populations that are obvious within a line and not comparable
   between them. On a real HDFC header they are 1.8pt and 12.7pt; a fixed 12.0 sat
   0.7pt from merging two money columns and losing a side of the ledger.
+- **Prose about balances is not a balance row.** HDFC prints "Closing balance
+  includes funds earmarked for hold" under *every* page. A cross-column label
+  only marks an endpoint when the row also carries a figure — otherwise the parse
+  stops on page one and silently discards everything after it. In `words.py` the
+  same rule drops it entirely rather than passing it on, because a row with no
+  date and no figures is indistinguishable from a wrapped narration downstream
+  and gets glued onto the last transaction.
+- **The CI fixture list is checked by a test.** A hand-maintained list drifts, and
+  it did: five fixtures including both word-position PDFs sat unlisted while their
+  unit tests passed, so that whole path could have broken with CI green. Adding a
+  fixture means naming it in `ci.yml` or exempting it with a reason.
 - **Three checks, not two.** Where a bank prints its own column totals (Axis
   labels the row `TRANSACTION TOTAL`) they are parsed into `stated_debits` /
   `stated_credits` and compared. This is not redundant with the other two: when

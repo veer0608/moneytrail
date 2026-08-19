@@ -246,3 +246,63 @@ def test_a_closing_marker_ends_the_absorbing():
     assert "CLOSING" not in rows[0].cells[narration]
     assert "computer" not in rows[0].cells[narration]
     assert any("CLOSING" in cell for cell in rows[1].cells)
+
+
+# --- prose under the table --------------------------------------------------
+
+
+def test_a_footer_is_not_glued_onto_the_last_transaction():
+    """Real HDFC statements print a disclaimer under every page.
+
+    "Closing balance includes funds earmarked for hold and uncleared funds"
+    has no date and no figures, which makes it indistinguishable from a wrapped
+    narration -- and it arrived in a real ledger as
+    "IB BILLPAY DR-HDFCVE balance includes funds earmarked".
+
+    It is set apart from the table by a wider gap than a wrapped line, and that
+    is what separates them.
+    """
+    columns = read_header(HDFC_HEADER)
+    lines = [
+        dated(130, "04/01/16", "POS", "100.00", "398.82"),
+        dated(141, "11/01/16", "NEFT", "1600.00", "1387.37"),
+        dated(152, "15/01/16", "BILLPAY", "11.45", "1375.92"),
+        # 21pt below, where the rows are 11pt apart.
+        [word("Closing", 40, top=173), word("balance", 63, top=173),
+         word("includes", 88, top=173), word("funds", 114, top=173)],
+    ]
+
+    rows = assemble(lines, columns)
+    narration = column_map(columns)["narration"]
+
+    assert len(rows) == 3
+    assert all("includes" not in row.cells[narration] for row in rows)
+
+
+def test_a_balance_row_spanning_columns_is_still_kept():
+    """Prose is dropped; a real endpoint is not.
+
+    The difference is the figure. "CLOSING BALANCE 96,170.60" straddles the
+    date and narration columns exactly as the disclaimer does, and has to
+    survive so the endpoint it states is read.
+    """
+    columns = read_header(HDFC_HEADER)
+    lines = [
+        dated(130, "04/01/16", "POS", "100.00", "398.82"),
+        [word("CLOSING", 40, top=151), word("BALANCE", 80, top=151),
+         word("298.82", 490.0, 512.0, top=151)],
+    ]
+
+    rows = assemble(lines, columns)
+
+    assert len(rows) == 2
+    assert any("CLOSING" in cell for cell in rows[1].cells)
+
+
+def test_the_pitch_is_the_commonest_gap_not_the_average():
+    """A few large gaps at section breaks would drag a mean past what it detects."""
+    from moneytrail.parsers.words import line_pitch
+
+    lines = [[word("x", 40, top=t)] for t in (100, 111, 122, 133, 200, 400)]
+
+    assert line_pitch(lines) == 11.0

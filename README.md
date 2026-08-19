@@ -107,7 +107,7 @@ python -m pytest
 
 ## Status
 
-**Phases 0 and 1 — done.** 102 tests.
+**Everything below is shipped.** 466 tests, CI green on 3.11 and 3.12.
 
 - **CSV / TSV / delimited-text** net-banking exports.
 - **PDF**, including the password-protected ones banks email you. Ruled tables
@@ -668,7 +668,8 @@ which costs money and moves on someone else's schedule.
 
 | phase | what |
 |---|---|
-| — | Grow the parser against real statements from other banks; every format so far has broken it in a new way |
+| — | Grow the parser against real statements from other banks; every format so far has broken it in a new way, and none of the breaks were in the reconciliation engine |
+| — | Get it in front of one accountant. The remaining risk is contact with real files, not features |
 
 ### The number to report
 
@@ -694,9 +695,11 @@ the metric is also the bug tracker.
 - **Parsers map by header alias, not column position.** Every bank names its
   columns differently; adding a bank should be a new entry in a tuple, not a new
   branch in the parser.
-- **A half-recovered PDF table is rejected.** If no header can be found under
-  either extraction strategy the file is refused, because a table missing rows
-  would still reconcile — against a wrong total.
+- **A half-recovered PDF table is rejected.** If none of the three extraction
+  passes finds a header the file is refused, because a table missing rows would
+  still reconcile — against a wrong total. That includes a statement whose text
+  layer carries no column information at all: the geometry is not there to be
+  read, and guessing at it is the failure this rule exists to prevent.
 - **Failures carry a locator.** Row number for CSV, row *and page* for PDF, so
   a discrepancy in a six-page statement is findable.
 - **`.gitignore` blocks `*.pdf`, `*.csv`, `/statements/` and `/data/` by

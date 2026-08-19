@@ -191,3 +191,29 @@ def test_a_narration_beginning_with_total_is_not_a_totals_row():
     assert is_totals_row("Total")
     assert not is_totals_row("TOTAL ENERGIES FUEL PUMP")
     assert not is_totals_row("UPI/TOTAL/PAYMENT")
+
+
+def test_prose_about_balances_is_not_a_balance_row():
+    """A label spanning columns needs a figure before it ends the ledger.
+
+    HDFC prints "Closing balance includes funds earmarked for hold" under
+    *every* page. Read as the closing balance it stops the parse on page one
+    and silently discards every transaction after it -- which is exactly the
+    silent data loss this project exists to catch, arriving through the parser
+    instead of around it.
+    """
+    from moneytrail.parsers.table import RawRow, _balance_marker
+
+    prose = RawRow(number=1, cells=["Closing", "balance includes funds earmarked", ""])
+    real = RawRow(number=2, cells=["CLOSING", "BALANCE", "96170.60"])
+
+    assert _balance_marker(prose) is None
+    assert _balance_marker(real) == "closing"
+
+
+def test_a_label_alone_in_one_cell_still_marks_without_a_figure():
+    """Unchanged behaviour: a summary block may put the label and the value on
+    separate lines, and the label cell alone has always been enough."""
+    from moneytrail.parsers.table import RawRow, _balance_marker
+
+    assert _balance_marker(RawRow(number=1, cells=["CLOSING BALANCE", "", ""])) == "closing"

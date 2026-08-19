@@ -42,6 +42,7 @@ from .base import (
     looks_like_date,
     normalise_header,
 )
+from ..money import parse_optional_amount
 from .table import RawRow, match_column
 
 #: Words whose tops differ by less than this are on the same line. Bank
@@ -174,6 +175,38 @@ def line_to_cells(line: Sequence[dict], columns: Sequence[Column]) -> list[str]:
     return [" ".join(parts) for parts in cells]
 
 
+#: A line further below its predecessor than this many times the document's own
+#: line pitch has been set apart from the table rather than wrapped within it.
+#: Measured on a real HDFC statement, rows sit 11pt apart and the footer
+#: disclaimer 21pt below the last of them, so the two populations are nearly
+#: two-to-one and anything from 1.4 to 1.8 separates them.
+BREAK_RATIO = 1.6
+
+
+def _is_amount(text: str) -> bool:
+    """Whether this cell holds a figure, rather than words about figures."""
+    try:
+        return parse_optional_amount(text) is not None
+    except ValueError:
+        return False
+
+
+def line_pitch(lines: Sequence[Sequence[dict]]) -> float | None:
+    """The document's own line spacing, as the commonest gap between lines.
+
+    Taken from the statement rather than assumed, for the same reason the label
+    threshold is: 7pt type and 10pt type are set on different leading, and a
+    constant that separates a wrapped line from a footer on one will not on the
+    other. The mode rather than the mean, because a handful of large gaps at
+    section breaks would drag an average up past the thing it has to detect.
+    """
+    tops = [line[0]["top"] for line in lines if line]
+    gaps = [round(b - a, 1) for a, b in zip(tops, tops[1:]) if b > a]
+    if len(gaps) < 3:
+        return None
+    return max(set(gaps), key=gaps.count)
+
+
 def column_map(columns: Sequence[Column]) -> dict[str, int]:
     """``{"date": 0, "narration": 1, ...}`` for the columns that were named."""
     return {c.name: i for i, c in enumerate(columns) if c.name}
@@ -200,9 +233,21 @@ def assemble(
     number = start
     pending: list[str] = []
 
+    lines = list(lines)
+    pitch = line_pitch(lines)
+    previous_top: float | None = None
+
     for line in lines:
         cells = line_to_cells(line, columns)
         dated = date_at is not None and looks_like_date(cells[date_at])
+
+        top = line[0]["top"]
+        detached = (
+            previous_top is not None
+            and pitch is not None
+            and top - previous_top > pitch * BREAK_RATIO
+        )
+        previous_top = top
 
         if dated:
             if current is not None:
@@ -218,22 +263,41 @@ def assemble(
             pending = []
             continue
 
-        # A marker line ends the absorbing. Without this the footer prose under
-        # the table -- "Closing balance includes funds earmarked for hold" --
-        # is swallowed into the last transaction's narration, and the endpoint
-        # it announces is never seen by the code that looks for endpoints.
-        # Emitted as its own row so that machinery still gets it.
-        if any(
-            is_opening_row(cell) or is_closing_row(cell) or is_summary_heading(cell)
-            for cell in cells
-        ):
+        # A marker line, or a line set apart from the table, ends the
+        # absorbing. Without this the footer prose under the table is swallowed
+        # into the last transaction's narration -- "IB BILLPAY DR-HDFCVE
+        # balance includes funds earmarked" is one real statement's last
+        # transaction wearing half a disclaimer -- and any endpoint the footer
+        # announces is never seen by the code that looks for endpoints.
+        #
+        # The marker is tested against the whole line rather than each cell:
+        # "Closing balance includes ..." starts under the date column and
+        # continues under the narration one, so no single cell begins with
+        # "closing balance" and a per-cell check misses it entirely.
+        joined = " ".join(part for part in cells if part)
+        # A balance row states a balance. "Closing balance includes funds
+        # earmarked for hold and uncleared funds" is a disclaimer HDFC prints
+        # under every page and states nothing, so the label alone is not
+        # enough -- without the figure it is prose, and prose is dropped.
+        marker = is_summary_heading(joined) or (
+            (is_opening_row(joined) or is_closing_row(joined))
+            and any(_is_amount(part) for part in cells)
+        )
+        if marker or detached:
             if current is not None:
                 rows.append(RawRow(number=number, cells=current, page=page))
                 number += 1
                 current = None
-            rows.append(RawRow(number=number, cells=cells, page=page))
-            number += 1
             pending = []
+            # A marker is handed on, because the endpoints and summary blocks
+            # it announces are read downstream. Detached prose is dropped
+            # outright rather than passed along: a row with no date and no
+            # figures looks exactly like a wrapped narration to the builder,
+            # which would glue the page footer onto the last transaction --
+            # the thing this branch exists to prevent.
+            if marker:
+                rows.append(RawRow(number=number, cells=cells, page=page))
+                number += 1
             continue
 
         if current is None:

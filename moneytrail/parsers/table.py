@@ -438,13 +438,50 @@ def _cell_amount(row: RawRow, index: int) -> Paise | None:
 
 
 def _balance_marker(row: RawRow) -> str | None:
-    """"opening" / "closing" if any cell of the row labels an endpoint."""
+    """"opening" / "closing" if this row labels an endpoint.
+
+    Checked per cell and then across the whole row, because a label does not
+    have to respect column boundaries. On a real HDFC statement the footer
+    "Closing balance includes funds earmarked for hold" puts "Closing" under
+    the date column and the rest under the narration one, so no single cell
+    begins with "closing balance" -- and the row then looks exactly like a
+    wrapped narration and gets glued onto the last transaction, which is how a
+    real ledger ended up with half a disclaimer in it.
+
+    The joined form is safe to test because these patterns are anchored at the
+    start: a transaction row begins with a date, so it cannot match.
+    """
     for cell in row.cells:
         if is_opening_row(cell):
             return "opening"
         if is_closing_row(cell):
             return "closing"
+
+    # Across columns, a label only counts when the row also carries a figure.
+    # "Closing balance includes funds earmarked for hold and uncleared funds"
+    # is a disclaimer HDFC prints under *every* page, and reading it as the
+    # closing balance ends the ledger on page one and silently discards every
+    # transaction after it. A balance row states a balance; prose about
+    # balances does not.
+    if not _carries_an_amount(row):
+        return None
+
+    joined = " ".join(cell for cell in row.cells if cell.strip())
+    if is_opening_row(joined):
+        return "opening"
+    if is_closing_row(joined):
+        return "closing"
     return None
+
+
+def _carries_an_amount(row: RawRow) -> bool:
+    for cell in row.cells:
+        try:
+            if parse_optional_amount(cell) is not None:
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 def _any_amount(row: RawRow, columns: dict[str, int]) -> Paise | None:
