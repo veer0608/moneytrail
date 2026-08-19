@@ -81,3 +81,15 @@ def card_path() -> Path:
 def fixture_password() -> str:
     """Unlocks a synthetic fixture and nothing else."""
     return "test1234"
+
+
+@pytest.fixture
+def icici_currency_headers_path() -> Path:
+    """ICICI's two departures from the HDFC layout, in one file.
+
+    Money columns labelled with the currency and no space before the bracket
+    (``Withdrawal Amount(INR)``), and an explicit ``0.00`` in the unused side
+    of the debit/credit pair where HDFC leaves the cell empty. Either one alone
+    stopped the file parsing at all.
+    """
+    return FIXTURES / "icici_currency_headers.csv"

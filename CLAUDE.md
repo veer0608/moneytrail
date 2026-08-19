@@ -8,7 +8,7 @@ reconciliation comes before categorisation; this file is how to work in it.
 - `moneytrail/` — the package (`cli.py`, `llm.py`, `export.py`, parsers, reconciliation)
 - `moneytrail/web.py` — the hosted front-end's core, framework-free; `api.py` is
   the FastAPI layer and `static/index.html` the single page
-- `tests/` — 430 tests, run from the repo root
+- `tests/` — 435 tests, run from the repo root
 - `evals/` — `runner.py` and `questions.yaml` (the golden set), plus saved run JSON
 - `statements/` — sample inputs
 - `scripts/` — fixture builders
@@ -20,7 +20,7 @@ Run from the repo root. Python 3.11.
 
 ```bash
 pip install -e ".[dev]"     # pytest + pdfplumber + openpyxl + reportlab + pyyaml
-python -m pytest -q         # 430 tests
+python -m pytest -q         # 435 tests
 moneytrail --help           # console script, defined in pyproject.toml
 python -m moneytrail.api    # the hosted front-end on :8000, needs the web extra
 ```
@@ -57,6 +57,11 @@ this project reads well.
   sentence is the reason anyone would trust it over a converter that keeps files.
 - **The deterministic path is gated at 100%.** CI holds the regex parser at 100% on
   the questions it was built for, and never gates on a model.
+- **Format differences are normalised, not enumerated.** The alias tables in
+  `parsers/table.py` are a losing game on their own: they already carried
+  `balance (inr)` with a space, which matched nothing ICICI actually writes.
+  Currency suffixes are stripped in `normalise_header` instead. `(Dr)`/`(Cr)`
+  must survive that strip -- they name a direction, not a unit.
 - **The served page contains no absolute URL.** Every outbound link -- the shop,
   the repository -- is handed to it at runtime by `/api/pricing`. Keeping the rule
   mechanical is the point: "this page loads nothing from anywhere else" stays

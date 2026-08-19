@@ -101,9 +101,37 @@ def looks_like_date(text: str) -> bool:
     return True
 
 
+#: Banks label the money columns with the currency: ``Withdrawal Amount(INR)``,
+#: ``Balance (INR)``, ``Deposit Amt in Rs.``. The suffix carries no meaning the
+#: parser needs -- amounts are paise either way -- and enumerating every
+#: spelling of it in the alias tables is a game that cannot be won: ICICI omits
+#: the space before the bracket, and one alias list already carried
+#: ``balance (inr)`` *with* one, which matched nothing it was written for.
+#:
+#: ``(Dr)`` and ``(Cr)`` are deliberately not stripped. Those say which side of
+#: the ledger a column is, which is exactly the meaning this is allowed to
+#: discard for a currency and must never discard for a direction.
+_CURRENCY_SUFFIX = re.compile(
+    r"""
+    \s*
+    (?:
+        [(\[] \s* (?: inr | rs\.? | ₹ | usd | \$ ) \s* [)\]]   # (INR), [Rs.], (₹)
+      | \s in \s (?: inr | rs\.? | ₹ )                          # ... in INR
+    )
+    \s*$
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
 def normalise_header(text: str) -> str:
-    """Lowercase, collapse whitespace, drop trailing punctuation."""
-    return re.sub(r"\s+", " ", text.strip().lower()).rstrip(".:")
+    """Lowercase, collapse whitespace, drop trailing punctuation and currency.
+
+    The currency suffix goes last, after the whitespace collapse, so that
+    ``Balance (INR)`` and ``Balance(INR)`` reduce to the same thing.
+    """
+    cleaned = re.sub(r"\s+", " ", text.strip().lower()).rstrip(".:")
+    return _CURRENCY_SUFFIX.sub("", cleaned).strip()
 
 
 def is_opening_row(narration: str) -> bool:

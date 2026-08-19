@@ -306,10 +306,22 @@ def build_statement(
 def _amounts(row: RawRow, columns: dict[str, int]) -> tuple[Paise | None, Paise | None]:
     """Return ``(debit, credit)`` for either column layout."""
     if "debit" in columns or "credit" in columns:
-        return (
-            parse_optional_amount(row.cell(columns.get("debit"))),
-            parse_optional_amount(row.cell(columns.get("credit"))),
-        )
+        debit = parse_optional_amount(row.cell(columns.get("debit")))
+        credit = parse_optional_amount(row.cell(columns.get("credit")))
+        # HDFC leaves the unused side of the pair empty; ICICI prints `0.00`
+        # into it. Both mean the same thing -- this row moved money one way --
+        # and read literally the second one is a row that is somehow both a
+        # debit and a credit, which is how ICICI statements failed to parse at
+        # all. A zero here is absence, not a transaction of no rupees.
+        #
+        # Only when the other side actually carries a value: 0.00 against 0.00
+        # says nothing, and is left alone for the caller to reject rather than
+        # silently turned into a row that moved money.
+        if debit == 0 and credit:
+            debit = None
+        elif credit == 0 and debit:
+            credit = None
+        return debit, credit
     signed = parse_optional_amount(row.cell(columns.get("amount")))
     if signed is None:
         return None, None

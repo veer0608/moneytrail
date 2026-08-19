@@ -90,3 +90,73 @@ def test_a_row_that_is_neither_amount_nor_marker_is_loud(tmp_path: Path):
 
     with pytest.raises(UnparseableStatement, match="no debit or credit"):
         parse_statement(target)
+
+
+# --- formats other than the one this was written against --------------------
+
+
+def test_currency_suffixed_headers_are_recognised():
+    """``Balance(INR)`` and ``Balance (INR)`` have to reduce to the same thing.
+
+    Enumerating every spelling in the alias tables is unwinnable -- the list
+    already carried ``balance (inr)`` with a space, which matched nothing ICICI
+    actually writes -- so the suffix is normalised away instead.
+    """
+    from moneytrail.parsers.base import normalise_header
+
+    assert normalise_header("Withdrawal Amount(INR)") == "withdrawal amount"
+    assert normalise_header("Balance (INR)") == "balance"
+    assert normalise_header("Balance(INR)") == "balance"
+    assert normalise_header("Deposit Amt in Rs.") == "deposit amt"
+
+
+def test_direction_markers_are_not_stripped_as_currency():
+    """``(Dr)`` and ``(Cr)`` say which side of the ledger a column is.
+
+    That is exactly the meaning the currency strip is allowed to discard for a
+    unit and must never discard for a direction.
+    """
+    from moneytrail.parsers.base import normalise_header
+
+    assert normalise_header("Withdrawal (Dr)") == "withdrawal (dr)"
+    assert normalise_header("Deposit (Cr)") == "deposit (cr)"
+
+
+def test_a_zero_in_the_unused_column_is_absence_not_a_transaction(
+    icici_currency_headers_path,
+):
+    """ICICI prints 0.00 where HDFC leaves the cell empty.
+
+    Read literally that is a row which is both a debit and a credit, and it
+    stopped these statements parsing at all.
+    """
+    statement = parse_statement(icici_currency_headers_path)
+
+    assert statement.bank == "ICICI"
+    assert len(statement.transactions) == 3
+    assert [t.direction for t in statement.transactions] == [
+        Direction.CREDIT,
+        Direction.DEBIT,
+        Direction.DEBIT,
+    ]
+
+
+def test_the_icici_layout_reconciles(icici_currency_headers_path):
+    from moneytrail import reconcile
+
+    result = reconcile(parse_statement(icici_currency_headers_path))
+
+    assert result.ok
+    assert result.credits == 125000_00
+    assert result.debits == 1643_00
+
+
+def test_zero_against_zero_is_not_quietly_made_into_a_movement():
+    """A row with 0.00 on both sides says nothing and must not be invented into
+    a transaction -- it is rejected, loudly, like any other unreadable row."""
+    from moneytrail.parsers.table import _amounts, RawRow
+
+    columns = {"debit": 0, "credit": 1}
+    row = RawRow(number=1, cells=["0.00", "0.00"])
+
+    assert _amounts(row, columns) == (0, 0)
