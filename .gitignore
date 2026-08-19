@@ -13,7 +13,12 @@
 # Generated reports contain the same data the statements do.
 *.html
 
-# ...except the synthetic fixtures, which contain no real account data.
+# ...except the front-end, which is source rather than a generated report. The
+# rule above is aimed at `moneytrail report` output; without this exception the
+# served page is silently left out of the commit and the deploy 500s.
+!moneytrail/static/*.html
+
+# ...and except the synthetic fixtures, which contain no real account data.
 !tests/fixtures/*.csv
 !tests/fixtures/*.pdf
 !tests/fixtures/*.xls
@@ -28,3 +33,7 @@ venv/
 build/
 dist/
 .env
+
+# Exports contain everything the statements do.
+moneytrail-ledger.*
+*.certificate.txt

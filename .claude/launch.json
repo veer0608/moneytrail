@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "moneytrail-web",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "moneytrail.api", "--port", "8137"],
+      "port": 8137
+    }
+  ]
+}

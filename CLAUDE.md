@@ -6,7 +6,9 @@ reconciliation comes before categorisation; this file is how to work in it.
 ## Layout
 
 - `moneytrail/` — the package (`cli.py`, `llm.py`, `export.py`, parsers, reconciliation)
-- `tests/` — 364 tests, run from the repo root
+- `moneytrail/web.py` — the hosted front-end's core, framework-free; `api.py` is
+  the FastAPI layer and `static/index.html` the single page
+- `tests/` — 391 tests, run from the repo root
 - `evals/` — `runner.py` and `questions.yaml` (the golden set), plus saved run JSON
 - `statements/` — sample inputs
 - `scripts/` — fixture builders
@@ -17,15 +19,21 @@ Run from the repo root. Python 3.11.
 
 ```bash
 pip install -e ".[dev]"     # pytest + pdfplumber + openpyxl + reportlab + pyyaml
-python -m pytest -q         # 364 tests
+python -m pytest -q         # 391 tests
 moneytrail --help           # console script, defined in pyproject.toml
+python -m moneytrail.api    # the hosted front-end on :8000, needs the web extra
 ```
 
 ## The dependency rule is a feature, not an accident
 
 `dependencies = []`. The core parses CSV and reconciles with **nothing installed**,
 and `llm.py` speaks HTTP over the standard library so `ask --model` works on a bare
-install. Everything else is an extra: `pdf`, `xlsx`, `formats`, `evals`, `dev`.
+install. Everything else is an extra: `pdf`, `xlsx`, `formats`, `evals`, `web`, `dev`.
+
+`web.py` holds the hosted front-end's reasoning and imports no framework; `api.py`
+is the only file that imports FastAPI. Keep it that way — and note that `api.py`
+deliberately omits `from __future__ import annotations`, because FastAPI resolves
+handler annotations against module globals and postponed evaluation breaks it.
 
 Before adding an import, check which tier it lands in. Moving a dependency into the
 core would break the claim the README makes, and that claim is a large part of why
@@ -38,8 +46,14 @@ this project reads well.
   catches faults the chain cannot see, including rows lost off the end. If a parse
   silently drops a row, every total built on it is wrong and nothing else in the
   product will say so. Do not reorder this.
-- **Statements never leave the machine.** No telemetry, no upload, no default that
-  sends a statement anywhere. A model is only called when explicitly asked.
+- **Statements never leave the machine** — in the CLI, absolutely. No telemetry, no
+  upload, no default that sends a statement anywhere. A model is only called when
+  explicitly asked. The hosted front-end is the one deliberate exception and makes
+  the weaker promise it can actually keep: the bytes live inside a single request,
+  in a `TemporaryDirectory` removed before the response is written, and there is no
+  database, no logging of content, and no second request that could see them. Do
+  not add storage, a queue, or a job id — each would break that sentence, and the
+  sentence is the reason anyone would trust it over a converter that keeps files.
 - **The deterministic path is gated at 100%.** CI holds the regex parser at 100% on
   the questions it was built for, and never gates on a model.
 - **An unverifiable parse is not a pass.** A card statement that prints no totals

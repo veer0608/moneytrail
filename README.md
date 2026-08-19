@@ -318,6 +318,38 @@ first thing anyone receiving this will do, and it has to match the certificate
 printed beside it. CSV is written with a BOM so Excel on Windows opens it as
 UTF-8 rather than turning every rupee sign into mojibake.
 
+### The hosted version
+
+```bash
+pip install -e ".[web]"
+python -m moneytrail.api        # http://127.0.0.1:8000
+```
+
+Drop statements on the page, get the trust strip and the workbook back. It exists
+because the people who most need the certificate — accountants reconciling a
+dozen client statements a month — will not `pip install` anything, and a promise
+nobody can reach is worth less than a weaker one they can.
+
+So this is the one place the local-first rule bends, and the README would rather
+be exact than reassuring. The CLI's promise is absolute: nothing leaves the
+machine. A server cannot say that. What it says instead is narrower and true —
+the uploaded bytes live inside a single request, in a temporary directory removed
+before the reply is written; there is no database, nothing is logged but the
+method and path, and no second request exists that could see them. The parsers
+take paths rather than bytes, so the upload really is written to disk for the
+seconds it takes to read it, and the page says so rather than claiming otherwise.
+There is a test asserting every scratch directory is gone by the time the
+response is built.
+
+The workbook rides home inside the same JSON response and is assembled into a
+file by your browser. That is what keeps the server stateless: no second request
+to serve means nothing worth keeping between them.
+
+`web.py` holds the reasoning and imports no framework; `api.py` is the only file
+that touches FastAPI. The page is a single HTML file with no build step, no CDN
+and no analytics — the same test the offline report has, asserting the served
+page contains no `http://`, no `src=` and no `@import`.
+
 ### The trust strip
 
 ```bash

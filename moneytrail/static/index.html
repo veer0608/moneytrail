@@ -1,0 +1,295 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>moneytrail — a ledger that proves it is all of it</title>
+<!--
+  One file, no build step, no CDN, no analytics. Everything this page needs is
+  in it, which is checkable by reading it -- the same discipline the offline
+  HTML report keeps, and the only kind of privacy claim worth making.
+-->
+<style>
+  :root {
+    --ink: #16181d;
+    --muted: #6b7280;
+    --line: #e4e7ec;
+    --page: #fbfbfc;
+    --card: #ffffff;
+    --accent: #1f5f4e;
+    --ok: #157a52;
+    --ok-bg: #eaf6f0;
+    --weak: #8a6100;
+    --weak-bg: #fdf4e3;
+    --bad: #b0281f;
+    --bad-bg: #fdeeec;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #e8eaed; --muted: #9aa2ad; --line: #2c313a; --page: #14161a;
+      --card: #1b1e24; --accent: #6fd0ae;
+      --ok: #6fd0ae; --ok-bg: #16302a;
+      --weak: #e0b357; --weak-bg: #322a17;
+      --bad: #f08a80; --bad-bg: #3a1f1d;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2.5rem 1.25rem 5rem;
+    background: var(--page); color: var(--ink);
+    font: 16px/1.55 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 54rem; margin: 0 auto; }
+  h1 { font-size: 1.6rem; margin: 0 0 .35rem; letter-spacing: -.02em; }
+  h2 { font-size: 1rem; margin: 2.5rem 0 .85rem; text-transform: uppercase;
+       letter-spacing: .09em; color: var(--muted); font-weight: 600; }
+  .lede { color: var(--muted); margin: 0 0 2rem; max-width: 42rem; }
+  .lede strong { color: var(--ink); font-weight: 600; }
+
+  #drop {
+    border: 2px dashed var(--line); border-radius: 12px; background: var(--card);
+    padding: 2.75rem 1.5rem; text-align: center; cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  #drop:hover, #drop.over { border-color: var(--accent); background: var(--ok-bg); }
+  #drop p { margin: .3rem 0; }
+  #drop .hint { color: var(--muted); font-size: .875rem; }
+  #picked { margin: .9rem 0 0; font-size: .875rem; color: var(--muted); }
+
+  .controls { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center;
+              margin-top: 1.1rem; }
+  label.inline { font-size: .875rem; color: var(--muted); }
+  select, input[type=password] {
+    font: inherit; font-size: .9rem; padding: .5rem .6rem; color: var(--ink);
+    background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+  }
+  button {
+    font: inherit; font-weight: 600; padding: .62rem 1.3rem; border: 0;
+    border-radius: 8px; background: var(--accent); color: #fff; cursor: pointer;
+  }
+  button:disabled { opacity: .5; cursor: default; }
+  @media (prefers-color-scheme: dark) { button { color: #10241d; } }
+
+  .banner { margin: 2rem 0 0; padding: 1rem 1.15rem; border-radius: 10px;
+            border-left: 4px solid; font-weight: 600; }
+  .banner.ok   { background: var(--ok-bg);   border-color: var(--ok);   color: var(--ok); }
+  .banner.weak { background: var(--weak-bg); border-color: var(--weak); color: var(--weak); }
+  .banner.failed { background: var(--bad-bg); border-color: var(--bad); color: var(--bad); }
+  .banner span { display: block; font-weight: 400; color: var(--ink);
+                 margin-top: .35rem; font-size: .9rem; }
+
+  .tile { background: var(--card); border: 1px solid var(--line);
+          border-left: 4px solid var(--line); border-radius: 10px;
+          padding: 1rem 1.15rem; margin-bottom: .85rem; }
+  .tile.ok { border-left-color: var(--ok); }
+  .tile.weak { border-left-color: var(--weak); }
+  .tile.failed { border-left-color: var(--bad); }
+  .tile header { display: flex; flex-wrap: wrap; gap: .5rem 1rem;
+                 align-items: baseline; justify-content: space-between; }
+  .tile .name { font-weight: 600; word-break: break-all; }
+  .verdict { font-size: .75rem; font-weight: 700; letter-spacing: .08em;
+             padding: .18rem .55rem; border-radius: 999px; white-space: nowrap; }
+  .ok .verdict { background: var(--ok-bg); color: var(--ok); }
+  .weak .verdict { background: var(--weak-bg); color: var(--weak); }
+  .failed .verdict { background: var(--bad-bg); color: var(--bad); }
+  .meta { color: var(--muted); font-size: .85rem; margin: .3rem 0 .8rem; }
+  .figures { display: grid; grid-template-columns: auto auto; gap: .12rem 1.1rem;
+             justify-content: start; font-variant-numeric: tabular-nums;
+             font-size: .9rem; }
+  .figures dt { color: var(--muted); }
+  .figures dd { margin: 0; text-align: right; }
+  .notes { margin: .85rem 0 0; padding: 0; list-style: none;
+           font-size: .85rem; color: var(--bad); }
+  .weak .notes { color: var(--weak); }
+  .notes li { margin-top: .3rem; }
+  .digest { margin-top: .8rem; font: .72rem/1.4 ui-monospace, Menlo, Consolas, monospace;
+            color: var(--muted); word-break: break-all; }
+
+  details { margin-top: 1.4rem; }
+  summary { cursor: pointer; color: var(--muted); font-size: .9rem; }
+  pre { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+        padding: 1rem; overflow-x: auto; font-size: .8rem; line-height: 1.5; }
+  footer { margin-top: 3.5rem; padding-top: 1.5rem; border-top: 1px solid var(--line);
+           color: var(--muted); font-size: .84rem; }
+  footer p { max-width: 42rem; }
+</style>
+
+<main>
+  <h1>moneytrail</h1>
+  <p class="lede">
+    Bank and credit-card statements into one spreadsheet — with a certificate
+    that says whether anything went missing on the way.
+    <strong>Every other converter can drop a row without telling you.</strong>
+  </p>
+
+  <div id="drop" tabindex="0" role="button" aria-label="Choose statement files">
+    <p><strong>Drop statements here</strong>, or click to choose</p>
+    <p class="hint">PDF, CSV, XLS or XLSX · up to 25 files</p>
+    <input id="files" type="file" multiple hidden
+           accept=".pdf,.csv,.tsv,.txt,.xls,.xlsx">
+  </div>
+  <p id="picked"></p>
+
+  <div class="controls">
+    <label class="inline" for="fmt">Format</label>
+    <select id="fmt">
+      <option value="xlsx">Excel (.xlsx)</option>
+      <option value="csv">CSV</option>
+    </select>
+    <label class="inline" for="password">PDF password</label>
+    <input id="password" type="password" placeholder="only if locked" autocomplete="off">
+    <button id="go" disabled>Reconcile</button>
+  </div>
+
+  <div id="out" aria-live="polite"></div>
+
+  <footer>
+    <p>
+      Your file is read inside the one request that uploads it and removed
+      before the reply is sent. Nothing is stored, logged or queued — there is
+      no database, so a second visit cannot see the first one's file. The
+      spreadsheet comes back inside that same reply and is assembled by your
+      browser, not fetched from a server.
+    </p>
+    <p>
+      Prefer it never to touch a server at all? The command-line version runs
+      entirely on your machine and is open source.
+    </p>
+  </footer>
+</main>
+
+<script>
+  const drop = document.getElementById("drop");
+  const input = document.getElementById("files");
+  const picked = document.getElementById("picked");
+  const go = document.getElementById("go");
+  const out = document.getElementById("out");
+
+  let chosen = [];
+
+  function choose(list) {
+    chosen = Array.from(list);
+    picked.textContent = chosen.length
+      ? chosen.length + " file" + (chosen.length === 1 ? "" : "s") + ": " +
+        chosen.map(f => f.name).join(", ")
+      : "";
+    go.disabled = chosen.length === 0;
+  }
+
+  drop.addEventListener("click", () => input.click());
+  drop.addEventListener("keydown", e => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); input.click(); }
+  });
+  input.addEventListener("change", () => choose(input.files));
+  ["dragenter", "dragover"].forEach(name =>
+    drop.addEventListener(name, e => { e.preventDefault(); drop.classList.add("over"); }));
+  ["dragleave", "drop"].forEach(name =>
+    drop.addEventListener(name, e => { e.preventDefault(); drop.classList.remove("over"); }));
+  drop.addEventListener("drop", e => choose(e.dataTransfer.files));
+
+  const escape = s => String(s).replace(/[&<>"']/g,
+    c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  const VERDICT = { ok: "RECONCILED", weak: "RECONCILED*", failed: "NOT RECONCILED" };
+
+  function tileHtml(t) {
+    const figures = t.lines
+      .map(([k, v]) => `<dt>${escape(k)}</dt><dd>${escape(v)}</dd>`).join("");
+    const notes = t.notes.length
+      ? `<ul class="notes">${t.notes.map(n => `<li>${escape(n)}</li>`).join("")}</ul>`
+      : "";
+    const checks = t.checks.length ? t.checks.join(", ") : "nothing to check against";
+    return `<article class="tile ${escape(t.status)}">
+      <header>
+        <span class="name">${escape(t.filename)}</span>
+        <span class="verdict">${VERDICT[t.status] || t.status}</span>
+      </header>
+      <p class="meta">${escape(t.institution)} · ${escape(t.account)} ·
+        ${escape(t.period)} · ${t.transactions} transactions ·
+        checks: ${escape(checks)}</p>
+      <dl class="figures">${figures}</dl>
+      ${notes}
+      <p class="digest">sha-256 ${escape(t.digest)}</p>
+    </article>`;
+  }
+
+  function download(result) {
+    const bytes = Uint8Array.from(atob(result.data), c => c.charCodeAt(0));
+    const url = URL.createObjectURL(new Blob([bytes], { type: result.content_type }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = result.filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    // Revoked on the next tick: the click has already handed the blob over.
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  function render(result) {
+    const failed = result.total - result.reconciled;
+    const weak = result.tiles.filter(t => t.status === "weak").length;
+    let cls = "ok", headline, detail;
+
+    if (failed > 0) {
+      cls = "failed";
+      headline = `Not reconciled — ${failed} of ${result.total} did not add up`;
+      detail = "The spreadsheet may be an incomplete copy of the source. " +
+               "Read the failures below before filing it anywhere.";
+    } else if (weak > 0) {
+      cls = "weak";
+      headline = `Reconciled — all ${result.total}, with ${weak} qualified`;
+      detail = "These added up, but only against figures taken from their own " +
+               "rows. Weaker than a clean pass. See the notes.";
+    } else {
+      headline = `Reconciled — all ${result.total} add up to the paisa`;
+      detail = "Checked against arithmetic the bank itself published. " +
+               "Nothing was dropped.";
+    }
+
+    const rejected = result.rejected.length
+      ? `<h2>Not read</h2>` + result.rejected.map(r =>
+          `<article class="tile failed"><header>
+             <span class="name">${escape(r.filename)}</span>
+             <span class="verdict">SKIPPED</span></header>
+           <p class="meta">${escape(r.reason)}${
+             r.needs_password ? " — enter the password above and try again" : ""}</p>
+           </article>`).join("")
+      : "";
+
+    out.innerHTML =
+      `<div class="banner ${cls}">${escape(headline)}<span>${escape(detail)}</span></div>` +
+      (result.total ? `<h2>Trust strip</h2>` + result.tiles.map(tileHtml).join("") : "") +
+      rejected +
+      (result.total
+        ? `<p style="margin-top:1.5rem"><button id="save">Download ${escape(result.filename)}</button></p>
+           <details><summary>Read the full certificate</summary>
+             <pre>${escape(result.certificate)}</pre></details>`
+        : "");
+
+    const save = document.getElementById("save");
+    if (save) save.addEventListener("click", () => download(result));
+  }
+
+  go.addEventListener("click", async () => {
+    const body = new FormData();
+    chosen.forEach(f => body.append("files", f));
+    body.append("fmt", document.getElementById("fmt").value);
+    body.append("password", document.getElementById("password").value);
+
+    go.disabled = true;
+    out.innerHTML = `<div class="banner weak">Reading and reconciling…</div>`;
+    try {
+      const response = await fetch("/api/export", { method: "POST", body });
+      const result = await response.json();
+      if (result.error) {
+        out.innerHTML = `<div class="banner failed">${escape(result.error)}</div>`;
+      } else {
+        render(result);
+      }
+    } catch (error) {
+      out.innerHTML = `<div class="banner failed">Could not reach the server` +
+        `<span>${escape(error.message)}</span></div>`;
+    } finally {
+      go.disabled = false;
+    }
+  });
+</script>
