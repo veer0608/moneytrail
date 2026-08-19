@@ -290,3 +290,94 @@ def test_an_unknown_format_answers_400(client, clean_statement_path):
 
     assert response.status_code == 400
     assert "error" in response.json()
+
+
+# --- facing the internet ----------------------------------------------------
+
+
+def test_a_budget_refuses_once_it_is_spent():
+    from moneytrail.web import RateLimit
+
+    limit = RateLimit(allowance=3, per_seconds=60.0)
+
+    assert [limit.check("1.2.3.4", now=0.0) for _ in range(4)] == [
+        True, True, True, False
+    ]
+
+
+def test_the_budget_refills_as_the_window_slides():
+    from moneytrail.web import RateLimit
+
+    limit = RateLimit(allowance=2, per_seconds=60.0)
+    limit.check("1.2.3.4", now=0.0)
+    limit.check("1.2.3.4", now=1.0)
+
+    assert not limit.check("1.2.3.4", now=30.0)
+    assert limit.check("1.2.3.4", now=61.0)  # the first hit has aged out
+
+
+def test_one_caller_cannot_spend_anothers_budget():
+    from moneytrail.web import RateLimit
+
+    limit = RateLimit(allowance=1, per_seconds=60.0)
+
+    assert limit.check("1.2.3.4", now=0.0)
+    assert limit.check("5.6.7.8", now=0.0)
+    assert not limit.check("1.2.3.4", now=0.0)
+
+
+def test_idle_callers_are_forgotten_rather_than_accumulated():
+    """Otherwise the limiter is a slow leak keyed by every address ever seen."""
+    from moneytrail.web import RateLimit
+
+    limit = RateLimit(allowance=1, per_seconds=1.0)
+    for i in range(5000):
+        limit.check(f"10.0.{i // 256}.{i % 256}", now=0.0)
+
+    limit.check("1.2.3.4", now=10_000.0)
+
+    assert len(limit._hits) < 4096
+
+
+def test_the_forwarded_client_is_preferred_over_the_proxy():
+    from moneytrail.web import client_key
+
+    assert client_key("203.0.113.9, 10.0.0.1", "10.0.0.1") == "203.0.113.9"
+    assert client_key(None, "10.0.0.1") == "10.0.0.1"
+    assert client_key("", None) == "unknown"
+
+
+def test_the_endpoint_answers_429_once_the_budget_is_spent(clean_statement_path):
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from moneytrail.api import create_app
+    from moneytrail.web import RateLimit
+
+    client = TestClient(create_app(limit=RateLimit(allowance=1, per_seconds=60.0)))
+    blob = clean_statement_path.read_bytes()
+    files = [("files", ("s.csv", blob))]
+
+    assert client.post("/api/export", files=files).status_code == 200
+    assert client.post("/api/export", files=files).status_code == 429
+
+
+def test_an_oversized_body_is_refused_before_it_is_read(client):
+    """Declared, not sent: the point is that nothing buffers it."""
+    from moneytrail.web import MAX_BODY_BYTES
+
+    response = client.post(
+        "/api/export",
+        content=b"x" * 32,
+        headers={
+            "content-type": "multipart/form-data; boundary=x",
+            "content-length": str(MAX_BODY_BYTES + 1),
+        },
+    )
+
+    assert response.status_code == 413
+
+
+def test_health_is_never_rate_limited(client):
+    """The platform pings this constantly; a 429 would read as a dead service."""
+    assert all(client.get("/health").status_code == 200 for _ in range(30))

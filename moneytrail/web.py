@@ -30,6 +30,8 @@ from __future__ import annotations
 
 import base64
 import tempfile
+import time
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Sequence
@@ -52,6 +54,9 @@ from .report import FAILED, OK, WEAK
 MAX_FILE_BYTES = 10 * 1024 * 1024
 #: A year of monthly statements across a couple of accounts, with room to spare.
 MAX_FILES = 25
+#: The whole request, not one file. Checked from Content-Length before anything
+#: is read, so an oversized upload is refused rather than buffered.
+MAX_BODY_BYTES = 30 * 1024 * 1024
 
 FORMATS = {
     "xlsx": (
@@ -154,6 +159,67 @@ class Result:
             # them. A few hundred rows is tens of kilobytes.
             "data": base64.b64encode(self.data).decode("ascii"),
         }
+
+
+class RateLimit:
+    """A per-client request budget, held in memory, stdlib only.
+
+    Parsing a PDF is real CPU work, and this runs on a small shared instance.
+    Without a budget one loop pins it and everyone else gets nothing.
+
+    Deliberately not distributed and deliberately not a dependency. A limiter
+    that needs Redis to start is a limiter that turns a quiet afternoon into an
+    outage, and if this ever runs on more than one instance the budget becomes
+    per-instance -- a weaker limit, not a broken one.
+
+    It is a speed bump, not a security control, and worth being plain about
+    why: the key comes from a proxy header a determined caller can vary. It
+    exists to stop accidental and casual abuse from monopolising the CPU. Stop
+    anything more determined at the edge, where the real client address is.
+    """
+
+    def __init__(self, allowance: int, per_seconds: float) -> None:
+        self.allowance = allowance
+        self.per_seconds = per_seconds
+        self._hits: dict[str, deque[float]] = {}
+
+    def check(self, key: str, *, now: float | None = None) -> bool:
+        """True if this call is within budget, and counts it. False to refuse."""
+        moment = time.monotonic() if now is None else now
+        cutoff = moment - self.per_seconds
+
+        window = self._hits.setdefault(key, deque())
+        while window and window[0] <= cutoff:
+            window.popleft()
+
+        # Callers who have gone quiet must not accumulate: without this the
+        # dict is a slow memory leak keyed by every address ever seen.
+        if len(self._hits) > 4096:
+            self._forget_idle(cutoff)
+
+        if len(window) >= self.allowance:
+            return False
+        window.append(moment)
+        return True
+
+    def _forget_idle(self, cutoff: float) -> None:
+        for key in [k for k, hits in self._hits.items() if not hits or hits[-1] <= cutoff]:
+            del self._hits[key]
+
+
+def client_key(forwarded_for: str | None, peer: str | None) -> str:
+    """Whose budget this request spends.
+
+    Behind a proxy the socket address is the proxy's, so the forwarded header
+    is used when present -- first entry, which is the original client on every
+    platform this is meant to run on. Spoofable, and the docstring on
+    `RateLimit` says so; the fallback is the peer address.
+    """
+    if forwarded_for:
+        first = forwarded_for.split(",")[0].strip()
+        if first:
+            return first
+    return peer or "unknown"
 
 
 def safe_name(raw: str) -> str:

@@ -1,0 +1,35 @@
+# Render blueprint. Committed so the deploy is described by the repo rather
+# than by remembered dashboard clicks -- the settings are reviewable in a diff,
+# and rebuilding the service is not an archaeology exercise.
+#
+# No Docker anywhere in this file on purpose: the build machine installs the
+# package the same way a developer does, which keeps one install path to be
+# wrong instead of two.
+services:
+  - type: web
+    name: moneytrail
+    runtime: python
+    plan: free
+    # Closest region to Bengaluru; the upload is the slow leg for the people
+    # this is for, and it is their bank statements crossing it.
+    region: singapore
+    branch: main
+
+    # `formats` pulls pdfplumber and openpyxl. Without them the service starts
+    # and then rejects every PDF, which looks like a parser bug rather than a
+    # missing extra -- the worst kind of deploy fault to diagnose.
+    buildCommand: pip install -e ".[web,formats]"
+
+    # Binds 0.0.0.0 and reads $PORT by itself; see the docstring on
+    # `moneytrail.api.main`.
+    startCommand: python -m moneytrail.api
+
+    healthCheckPath: /health
+
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      # Statements are not written anywhere that survives a request, so there
+      # is nothing to persist and no disk attached. Keep it that way.
+      - key: PYTHONUNBUFFERED
+        value: "1"
