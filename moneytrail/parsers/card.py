@@ -41,7 +41,12 @@ CARD_MARKERS = re.compile(
 _SUMMARY_FIELDS: tuple[tuple[str, str], ...] = (
     ("minimum_due", r"min(imum)?\s+(amount\s+)?dues?"),
     ("total_due", r"total\s+(amount\s+)?dues?|total\s+payable|net\s+amount\s+due"),
-    ("previous_balance", r"(previous|opening|last)\s+(statement\s+)?bal(ance)?|past\s+dues?"),
+    # HDFC heads it "PREVIOUS STATEMENT DUES" -- dues, not balance. Matched
+    # before the "Past Dues (if any)" aging table further down the page, which
+    # is a section heading rather than an opening figure; whichever label comes
+    # first on the page wins, and this one does.
+    ("previous_balance",
+     r"(previous|opening|last)\s+(statement\s+)?(bal(ance)?|dues?)|past\s+dues?"),
     ("payments", r"payments?\s*[/&]\s*credits?|payments?\b|credits?\s*[/&]\s*payments?"),
     ("purchases", r"purchases?\s*[/&]\s*debits?|purchases?\b|new\s+debits?|total\s+spends?"),
     ("fees", r"finance\s+charges?|interest\s+charges?|other\s+charges?|fees?\s*[&/]?\s*charges?"),
@@ -53,6 +58,17 @@ _CARD_ISSUERS = (
     "citi", "standard chartered", "rbl", "indusind", "au bank", "yes bank",
     "onecard", "slice", "idfc",
 )
+
+
+def summary_patterns() -> tuple[tuple[str, "re.Pattern[str]"], ...]:
+    """The summary labels, compiled, for a parser that can read geometry.
+
+    Handed out rather than reached for, so `words.py` stays ignorant of what a
+    card statement is: it knows how to pair a label with the figure beneath it
+    and nothing about which labels matter.
+    """
+    compiled = [(name, re.compile(pattern, re.IGNORECASE)) for name, pattern in _SUMMARY_FIELDS]
+    return tuple(compiled) + (("due_date", _DUE_DATE),)
 
 
 def looks_like_card(grid: Sequence[Sequence[str]]) -> bool:
@@ -76,8 +92,16 @@ def build_card_statement(
     columns: dict[str, int],
     rows: Sequence[RawRow],
     grid: Sequence[RawRow],
+    labelled: dict[str, str] | None = None,
 ) -> CardStatement:
-    """``rows`` are the transaction rows; ``grid`` is every row, for the summary."""
+    """``rows`` are the transaction rows; ``grid`` is every row, for the summary.
+
+    ``labelled`` is the summary box read from word positions, when the format
+    parser could recover it. A summary box is not a table -- its headings sit
+    on one line and the figures on the next, aligned by position alone -- so
+    splitting it by the transaction table's columns puts every value in the
+    wrong cell. Where geometry could be read it is believed over the grid.
+    """
     # Same reading the bank path settles, for the same reason: nothing in a
     # card's arithmetic depends on a date, so the wrong order passes silently.
     date_at = columns.get("date")
@@ -120,20 +144,39 @@ def build_card_statement(
         source=source,
         issuer=issuer,
         account_hint=account_hint,
-        summary=read_summary(grid),
+        summary=read_summary(grid, labelled),
         transactions=tuple(transactions),
         period_start=min(txn.date for txn in transactions),
         period_end=max(txn.date for txn in transactions),
     )
 
 
-def read_summary(grid: Sequence[RawRow]) -> CardSummary:
+def read_summary(
+    grid: Sequence[RawRow], labelled: dict[str, str] | None = None
+) -> CardSummary:
     values: dict[str, Paise] = {}
     for field, pattern in _SUMMARY_FIELDS:
         found = _labelled_amount(grid, re.compile(pattern, re.IGNORECASE))
         if found is not None:
             values[field] = found
-    return CardSummary(due_date=_labelled_date(grid), **values)
+
+    due_date = _labelled_date(grid)
+
+    # Geometry wins where it was available: it read the label and the figure as
+    # the page actually lays them out, rather than through columns that belong
+    # to a different table further down the document.
+    for field, text in (labelled or {}).items():
+        if field == "due_date":
+            try:
+                due_date = parse_date(text)
+            except UnparseableStatement:
+                pass
+            continue
+        amount = _amount_or_none(text)
+        if amount is not None:
+            values[field] = amount
+
+    return CardSummary(due_date=due_date, **values)
 
 
 def _labelled_amount(grid: Sequence[RawRow], label: re.Pattern) -> Paise | None:

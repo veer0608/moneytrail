@@ -28,6 +28,7 @@ from ..models import CardStatement, Statement
 from .base import PasswordRequired, StatementParser, UnparseableStatement
 from .build import build
 from .table import RawRow, clean_cell, find_header, is_header
+from .card import summary_patterns
 from .words import recover
 
 #: Ruled tables first -- exact when the bank draws borders.
@@ -92,15 +93,16 @@ class PdfStatementParser(StatementParser):
             # column entirely -- which costs the chain check and leaves the
             # statement reporting RECONCILED on half the evidence. Succeeding
             # worse is not succeeding sooner.
-            recovered = recover(document)
+            recovered = recover(document, summary_patterns())
             if recovered is not None:
-                rows, grid, columns = recovered
+                rows, grid, columns, labelled = recovered
                 return build(
                     source=path,
                     columns=columns,
                     rows=rows,
                     grid=grid,
                     preamble=preamble,
+                    labelled=labelled,
                 )
 
             # Last: pdfplumber's whitespace clustering, for anything whose

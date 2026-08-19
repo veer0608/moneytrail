@@ -23,6 +23,7 @@ def build(
     rows: Sequence[RawRow],
     grid: Sequence[RawRow],
     preamble: Sequence[str],
+    labelled: dict[str, str] | None = None,
 ) -> Statement | CardStatement:
     account_hint = find_account_hint(preamble)
 
@@ -37,6 +38,7 @@ def build(
             columns=columns,
             rows=rows,
             grid=grid,
+            labelled=labelled,
         )
 
     return build_statement(

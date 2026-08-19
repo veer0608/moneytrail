@@ -9,7 +9,7 @@ reconciliation comes before categorisation; this file is how to work in it.
 - `moneytrail/parsers/words.py` — grid recovery for PDFs that draw no table
 - `moneytrail/web.py` — the hosted front-end's core, framework-free; `api.py` is
   the FastAPI layer and `static/index.html` the single page
-- `tests/` — 486 tests, run from the repo root
+- `tests/` — 492 tests, run from the repo root
 - `evals/` — `runner.py` and `questions.yaml` (the golden set), plus saved run JSON
 - `statements/` — sample inputs
 - `scripts/` — fixture builders
@@ -21,7 +21,7 @@ Run from the repo root. Python 3.11.
 
 ```bash
 pip install -e ".[dev]"     # pytest + pdfplumber + openpyxl + reportlab + pyyaml
-python -m pytest -q         # 486 tests
+python -m pytest -q         # 492 tests
 moneytrail --help           # console script, defined in pyproject.toml
 python -m moneytrail.api    # the hosted front-end on :8000, needs the web extra
 ```
@@ -86,6 +86,18 @@ this project reads well.
   it did: five fixtures including both word-position PDFs sat unlisted while their
   unit tests passed, so that whole path could have broken with CI green. Adding a
   fixture means naming it in `ci.yml` or exempting it with a reason.
+- **A summary box is not a table.** Its headings sit on one line and the figures
+  on the next, aligned by position alone, so splitting it by the transaction
+  table's columns puts every value in the wrong cell. `words.read_labelled_values`
+  pairs a label with the nearest *amount or date* beneath it whose x-extent
+  overlaps — "amount or date" because headings wrap, and "PAYMENTS/CREDITS"
+  continues as "RECEIVED" on the line below.
+- **The rounding tolerance is on the summary check only.** Issuers round the
+  total they bill: HDFC computes ₹19,375.19 and charges ₹19,375.00. That check
+  compares the issuer's own published figures to each other and says nothing
+  about completeness, so a sub-rupee gap is reported as a note. The row checks
+  stay exact to the paisa — they are the completeness proof, and a tolerance
+  there would let a missing transaction hide inside it.
 - **The rupee sign arrives as the letter C.** Indian banks embed a rupee font and
   map the symbol onto an ASCII codepoint — HDFC's card statements use `ITFRupee`,
   where the glyph drawn at `C` *is* `₹`. `words.py` restores it from the font,

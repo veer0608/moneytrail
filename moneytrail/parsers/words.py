@@ -32,6 +32,7 @@ reconciliation gate is what catches it if that is ever wrong.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Iterable, Sequence
 
@@ -339,7 +340,8 @@ def assemble(
 
 def recover(
     document,
-) -> tuple[list[RawRow], list[RawRow], dict[str, int]] | None:
+    summary_patterns: Sequence[tuple[str, "re.Pattern[str]"]] = (),
+) -> tuple[list[RawRow], list[RawRow], dict[str, int], dict[str, str]] | None:
     """``(rows, grid, columns)`` for a borderless statement, or ``None``.
 
     ``grid`` is every line on every page, ``rows`` only the assembled
@@ -357,9 +359,13 @@ def recover(
     columns: list[Column] | None = None
     rows: list[RawRow] = []
     grid: list[RawRow] = []
+    labelled: dict[str, str] = {}
 
     for number, page in enumerate(document.pages, start=1):
         lines = cluster_lines(read_words(page))
+        if summary_patterns:
+            for field, value in read_labelled_values(lines, summary_patterns).items():
+                labelled.setdefault(field, value)
         header_at = None
         for index, line in enumerate(lines):
             found = read_header(line)
@@ -379,4 +385,78 @@ def recover(
 
     if columns is None:
         return None
-    return rows, grid, column_map(columns)
+    return rows, grid, column_map(columns), labelled
+
+
+#: How far below a label its value may sit. A summary box stacks the figure
+#: directly under its heading; anything further down belongs to another box.
+VALUE_DROP = 40.0
+
+
+def read_labelled_values(
+    lines: Sequence[Sequence[dict]],
+    patterns: Sequence[tuple[str, "re.Pattern[str]"]],
+    *,
+    drop: float = VALUE_DROP,
+) -> dict[str, str]:
+    """Pair each label on a page with the value printed beneath it.
+
+    A summary box is not a table and cannot be read as one. Its headings sit on
+    one line and their figures on the next, aligned by nothing but position --
+    HDFC prints five headings across a card statement's first page and their
+    five amounts underneath, interleaved with the ``+`` and ``=`` signs that
+    show the arithmetic. Split by the transaction table's columns, as the rest
+    of this module does, every one of them lands in the wrong cell.
+
+    So a label is matched to the nearest text below it whose horizontal extent
+    overlaps its own. That is the relationship the layout actually encodes, and
+    it is why this reads geometry rather than rows.
+
+    First match wins per field, in reading order. HDFC's ``Past Dues (if any)``
+    aging table further down the page matches the same pattern as ``PREVIOUS
+    STATEMENT DUES`` above it, and the one at the top is the one that means
+    what the field means.
+    """
+    found: dict[str, str] = {}
+
+    for index, line in enumerate(lines):
+        for text, x0, x1 in group_labels(line):
+            for name, pattern in patterns:
+                if name in found or not pattern.search(text):
+                    continue
+                value = _value_below(lines, index, x0, x1, drop)
+                if value:
+                    found[name] = value
+    return found
+
+
+def _value_below(
+    lines: Sequence[Sequence[dict]],
+    index: int,
+    x0: float,
+    x1: float,
+    drop: float,
+) -> str:
+    """The nearest text under ``x0..x1``, within ``drop`` points below."""
+    top = lines[index][0]["top"]
+    for below in lines[index + 1 :]:
+        if below[0]["top"] - top > drop:
+            return ""
+        under = [w for w in below if w["x1"] > x0 and w["x0"] < x1]
+        if under:
+            text = " ".join(w["text"] for w in under).strip()
+            # Only a figure or a date counts. A heading routinely wraps onto
+            # the line below it -- "PAYMENTS/CREDITS" continues as "RECEIVED",
+            # "PURCHASES/DEBIT" as "(Current Billing Cycle)" -- and taking the
+            # first thing underneath would read a label's own second half as
+            # its value. It also skips the "+" and "=" HDFC prints between the
+            # figures to show the box's arithmetic.
+            if _is_value(text):
+                return text
+    return ""
+
+
+def _is_value(text: str) -> bool:
+    if _is_amount(text):
+        return True
+    return looks_like_date(text)

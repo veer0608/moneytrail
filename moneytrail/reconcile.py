@@ -185,6 +185,9 @@ class CardReconciliation:
     row_credits: Paise
     discrepancies: tuple[Discrepancy, ...]
     checks: tuple[str, ...]
+    #: Sub-rupee gaps in the issuer's *own* summary box. Reported, not failed:
+    #: see ROUNDING_TOLERANCE.
+    roundings: tuple[str, ...] = ()
 
     @property
     def ok(self) -> bool:
@@ -231,10 +234,26 @@ class CardReconciliation:
             ran = ", ".join(self.checks)
             note = "" if self.verified else " (summary only -- rows not cross-checked)"
             lines.append(f"  RECONCILED to the paisa [{ran}]{note}")
+            lines += [f"    note: {r}" for r in self.roundings]
         else:
             lines.append(f"  FAILED -- {len(self.discrepancies)} discrepancy(ies):")
             lines += [f"    [{d.kind}] {d.describe()}" for d in self.discrepancies]
         return "\n".join(lines)
+
+
+#: Issuers round the total they ask you to pay. HDFC prints previous minus
+#: payments plus purchases as ₹19,375.19 and then bills ₹19,375.00 -- the
+#: rounding is theirs, and the parse that recovered both figures is exact.
+#:
+#: Tolerated on the summary check only, because that one compares the issuer's
+#: published figures to each other and says nothing about whether the ledger is
+#: complete. The row checks stay exact to the paisa: those are the completeness
+#: proof, and a tolerance there would let a missing transaction hide inside it.
+#:
+#: Failing a whole statement over nineteen paise of the bank's own rounding
+#: would put a red verdict on every HDFC card statement, and a red verdict
+#: everyone learns to dismiss is worse than none.
+ROUNDING_TOLERANCE = 100  # one rupee, in paise
 
 
 def reconcile_card(statement: CardStatement) -> CardReconciliation:
@@ -247,6 +266,7 @@ def reconcile_card(statement: CardStatement) -> CardReconciliation:
     )
 
     discrepancies: list[Discrepancy] = []
+    roundings: list[str] = []
     checks: list[str] = []
 
     if None not in (summary.previous_balance, summary.payments, summary.purchases, summary.total_due):
@@ -258,14 +278,20 @@ def reconcile_card(statement: CardStatement) -> CardReconciliation:
             + (summary.fees or 0)
         )
         if computed != summary.total_due:
-            discrepancies.append(
-                Discrepancy(
-                    kind="summary",
-                    expected=computed,
-                    actual=summary.total_due,
-                    narration="previous - payments + purchases + fees",
-                )
+            gap = Discrepancy(
+                kind="summary",
+                expected=computed,
+                actual=summary.total_due,
+                narration="previous - payments + purchases + fees",
             )
+            if abs(gap.delta) < ROUNDING_TOLERANCE:
+                roundings.append(
+                    f"the issuer's own summary is out by {_show(gap.delta)}, "
+                    f"which is it rounding the total it billed rather than "
+                    f"anything about this parse"
+                )
+            else:
+                discrepancies.append(gap)
 
     stated_debits = summary.stated_debits
     if stated_debits is not None:
@@ -298,6 +324,7 @@ def reconcile_card(statement: CardStatement) -> CardReconciliation:
         row_credits=row_credits,
         discrepancies=tuple(discrepancies),
         checks=tuple(checks),
+        roundings=tuple(roundings),
     )
 
 

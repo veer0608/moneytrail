@@ -109,3 +109,178 @@ class TestCommand:
         out = capsys.readouterr().out
         assert "total due" in out
         assert "RECONCILED to the paisa" in out
+
+
+# --- a summary box read from where it sits ----------------------------------
+
+
+def summary_page(lines):
+    """Words laid out as a real card statement lays out its summary box."""
+    def word(text, x0, top, width=None):
+        return {
+            "text": text,
+            "x0": x0,
+            "x1": x0 + (width if width is not None else len(text) * 4.0),
+            "top": top,
+        }
+    return [[word(*w) for w in line] for line in lines]
+
+
+def test_a_summary_box_is_read_by_position_not_by_columns():
+    """A summary box is not a table and cannot be read as one.
+
+    HDFC prints five headings across the top of a card statement and their five
+    figures underneath, aligned by nothing but position. Split by the
+    transaction table's columns -- which belong to a different table further
+    down the document -- every value lands in the wrong cell.
+    """
+    from moneytrail.parsers.card import summary_patterns
+    from moneytrail.parsers.words import read_labelled_values
+
+    lines = summary_page([
+        [("PAYMENTS/CREDITS", 155, 215.3, 60), ("PURCHASES/DEBIT", 258, 215.3, 55)],
+        [("PREVIOUS", 39, 219.5, 30), ("STATEMENT", 71, 219.5, 35), ("DUES", 108, 219.5, 16),
+         ("TOTAL", 445, 219.5, 19), ("AMOUNT", 466, 219.5, 28), ("DUE", 495, 219.5, 13)],
+        [("RECEIVED", 155, 223.5, 33), ("(Current", 258, 223.5, 28)],
+        [("₹", 445, 235.6, 8), ("19,375.00", 453, 235.6, 61)],
+        [("₹", 63, 242.2, 4), ("15,447.95", 67, 242.2, 33),
+         ("₹", 167, 242.2, 4), ("32,116.16", 171, 242.2, 33),
+         ("+", 232, 242.2, 5),
+         ("₹", 267, 242.2, 4), ("36,043.40", 271, 242.2, 33)],
+    ])
+
+    found = read_labelled_values(lines, summary_patterns())
+
+    assert found["previous_balance"] == "₹ 15,447.95"
+    assert found["payments"] == "₹ 32,116.16"
+    assert found["purchases"] == "₹ 36,043.40"
+    assert found["total_due"] == "₹ 19,375.00"
+
+
+def test_a_heading_that_wraps_is_not_read_as_its_own_value():
+    """"PAYMENTS/CREDITS" continues as "RECEIVED" on the line below it.
+
+    Taking the first text underneath a label would read the label's own second
+    half as its figure. Only an amount or a date counts as a value.
+    """
+    from moneytrail.parsers.card import summary_patterns
+    from moneytrail.parsers.words import read_labelled_values
+
+    lines = summary_page([
+        [("PAYMENTS/CREDITS", 155, 100.0, 60)],
+        [("RECEIVED", 155, 111.0, 33)],
+        [("₹", 167, 122.0, 4), ("32,116.16", 171, 122.0, 33)],
+    ])
+
+    assert read_labelled_values(lines, summary_patterns())["payments"] == "₹ 32,116.16"
+
+
+def test_a_value_too_far_below_its_label_is_not_claimed():
+    """Another box lower down the page is not this label's figure."""
+    from moneytrail.parsers.card import summary_patterns
+    from moneytrail.parsers.words import read_labelled_values
+
+    lines = summary_page([
+        [("TOTAL AMOUNT DUE", 445, 100.0, 63)],
+        [("₹", 445, 400.0, 8), ("19,375.00", 453, 400.0, 61)],
+    ])
+
+    assert "total_due" not in read_labelled_values(lines, summary_patterns())
+
+
+# --- the issuer's own rounding ----------------------------------------------
+
+
+def card_with(previous, payments, purchases, fees, total_due, rows):
+    from pathlib import Path
+
+    from moneytrail import CardStatement, CardSummary, Direction, Transaction
+    from datetime import date
+
+    return CardStatement(
+        source=Path("card.pdf"),
+        issuer="HDFC",
+        account_hint="XXXX4880",
+        summary=CardSummary(
+            previous_balance=previous,
+            payments=payments,
+            purchases=purchases,
+            fees=fees,
+            total_due=total_due,
+        ),
+        transactions=tuple(
+            Transaction(
+                row=n,
+                date=date(2026, 7, 1),
+                narration="X",
+                direction=d,
+                amount=a,
+            )
+            for n, (d, a) in enumerate(rows, start=1)
+        ),
+    )
+
+
+def test_the_issuers_own_rounding_is_a_note_not_a_failure():
+    """HDFC bills a rounded total: 19,375.19 computed, 19,375.00 charged.
+
+    Failing the statement over nineteen paise of the bank's own rounding would
+    put a red verdict on every HDFC card statement, and a red verdict everyone
+    learns to dismiss is worse than none. The rows still had to match exactly.
+    """
+    from moneytrail import Direction, reconcile_card
+
+    statement = card_with(
+        previous=1544795,
+        payments=3211616,
+        purchases=3604340,
+        fees=0,
+        total_due=1937500,  # computed is 1937519
+        rows=[(Direction.DEBIT, 3604340), (Direction.CREDIT, 3211616)],
+    )
+
+    result = reconcile_card(statement)
+
+    assert result.ok
+    assert result.roundings
+    assert "rounding" in result.roundings[0]
+
+
+def test_a_gap_of_a_rupee_or_more_is_still_a_failure():
+    """The tolerance is for rounding, not for a misread figure."""
+    from moneytrail import Direction, reconcile_card
+
+    statement = card_with(
+        previous=1544795,
+        payments=3211616,
+        purchases=3604340,
+        fees=0,
+        total_due=1937419,  # a full rupee out
+        rows=[(Direction.DEBIT, 3604340), (Direction.CREDIT, 3211616)],
+    )
+
+    assert not reconcile_card(statement).ok
+
+
+def test_the_row_checks_are_never_tolerant():
+    """They are the completeness proof.
+
+    A tolerance here would let a missing transaction hide inside it, which is
+    the one thing this whole project exists to catch.
+    """
+    from moneytrail import Direction, reconcile_card
+
+    statement = card_with(
+        previous=1544795,
+        payments=3211616,
+        purchases=3604340,
+        fees=0,
+        total_due=1937519,
+        # One row short by fifty paise -- well inside the summary tolerance.
+        rows=[(Direction.DEBIT, 3604290), (Direction.CREDIT, 3211616)],
+    )
+
+    result = reconcile_card(statement)
+
+    assert not result.ok
+    assert any(d.kind == "rows-debit" for d in result.discrepancies)

@@ -32,7 +32,11 @@ _DAY_FIRST = ("%d/%m/%y", "%d/%m/%Y", "%d-%m-%y", "%d-%m-%Y")
 _MONTH_FIRST = ("%m/%d/%y", "%m/%d/%Y", "%m-%d-%y", "%m-%d-%Y")
 #: These name the month or lead with the year, so no reading of them is in
 #: doubt and they are accepted whichever way round the numeric ones turn out.
-_UNAMBIGUOUS = ("%d %b %Y", "%d-%b-%Y", "%d-%b-%y", "%d %B %Y", "%Y-%m-%d")
+_UNAMBIGUOUS = (
+    "%d %b %Y", "%d-%b-%Y", "%d-%b-%y", "%d %B %Y", "%Y-%m-%d",
+    # "09 Aug, 2026" -- HDFC punctuates its due date this way.
+    "%d %b, %Y", "%d %B, %Y",
+)
 
 #: Kept under its old name and its old meaning: the day-first reading.
 DATE_FORMATS = _DAY_FIRST + _UNAMBIGUOUS
