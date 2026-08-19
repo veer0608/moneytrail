@@ -138,6 +138,29 @@ def reconcile(statement: Statement) -> Reconciliation:
             )
         )
 
+    # A third check, where the bank prints its own column totals -- Axis labels
+    # that row TRANSACTION TOTAL.
+    #
+    # It closes the one hole the other two cannot. When both endpoints are
+    # derived from the rows, a row lost off the *end* takes the closing balance
+    # with it: the chain stays consistent, opening + credits - debits still
+    # equals the new close, and both checks report a clean statement that is
+    # missing a transaction. A total the bank published separately does not
+    # move when a row goes missing, so it is the only figure that notices.
+    for kind, computed, stated in (
+        ("stated-debits", debits, statement.stated_debits),
+        ("stated-credits", credits, statement.stated_credits),
+    ):
+        if stated is not None and computed != stated:
+            discrepancies.append(
+                Discrepancy(
+                    kind=kind,
+                    expected=computed,
+                    actual=stated,
+                    narration=f"summed from the rows against the statement's own {kind[7:]} total",
+                )
+            )
+
     return Reconciliation(
         statement=statement,
         credits=credits,

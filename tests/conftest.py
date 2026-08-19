@@ -93,3 +93,24 @@ def icici_currency_headers_path() -> Path:
     stopped the file parsing at all.
     """
     return FIXTURES / "icici_currency_headers.csv"
+
+
+@pytest.fixture
+def axis_stated_totals_path() -> Path:
+    """Axis's layout, including the ``TRANSACTION TOTAL`` row it prints.
+
+    Both endpoints are derived, so the chain and totals checks are as weak as
+    they get -- which is exactly the statement where the bank's own column
+    totals are worth having.
+    """
+    return FIXTURES / "axis_stated_totals.csv"
+
+
+@pytest.fixture
+def axis_stated_totals_dropped_path() -> Path:
+    """The same statement with its *last* transaction row lost.
+
+    The case both other checks pass: the closing balance goes missing with the
+    row, so the chain stays consistent and the totals still add up.
+    """
+    return FIXTURES / "axis_stated_totals_dropped.csv"

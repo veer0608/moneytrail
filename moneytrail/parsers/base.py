@@ -142,6 +142,21 @@ def is_closing_row(narration: str) -> bool:
     return bool(_CLOSING_NARRATIONS.match(narration.strip()))
 
 
+#: Axis prints ``TRANSACTION TOTAL`` under the ledger with its own debit and
+#: credit sums. Matched whole-cell rather than as a prefix: "TOTAL" is a common
+#: enough word that a prefix match would claim narrations like "TOTAL ENERGIES
+#: FUEL", and a misread totals row is worse than an unread one.
+_TOTALS_ROW = re.compile(
+    r"^(transaction|grand|statement)?\s*totals?(\s+(of\s+)?transactions?)?$",
+    re.IGNORECASE,
+)
+
+
+def is_totals_row(text: str) -> bool:
+    """True when this cell labels a row of the bank's own column totals."""
+    return bool(_TOTALS_ROW.fullmatch(text.strip()))
+
+
 def is_summary_heading(text: str) -> bool:
     """"STATEMENT SUMMARY :-" and friends: the ledger has ended."""
     return bool(_SUMMARY_HEADING.match(text.strip()))

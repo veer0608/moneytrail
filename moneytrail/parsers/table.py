@@ -20,6 +20,7 @@ from .base import (
     is_closing_row,
     is_opening_row,
     is_summary_heading,
+    is_totals_row,
     looks_like_date,
     normalise_header,
     parse_date,
@@ -183,6 +184,8 @@ def build_statement(
 ) -> Statement:
     transactions: list[Transaction] = []
     opening: Paise | None = None
+    stated_debits: Paise | None = None
+    stated_credits: Paise | None = None
     opening_source = BalanceSource.EXPLICIT
     closing: Paise | None = None
     closing_source = BalanceSource.EXPLICIT
@@ -203,6 +206,18 @@ def build_statement(
             if stated_closing is not None:
                 closing = stated_closing
             break
+
+        # The bank's own column totals, read before anything else looks at the
+        # amounts: this row carries two of them and no balance, which every
+        # branch below misreads -- as a transaction that is somehow both a
+        # debit and a credit, which is how Axis statements failed outright.
+        if _is_totals_row(row):
+            stated_debits = parse_optional_amount(row.cell(columns.get("debit")))
+            stated_credits = parse_optional_amount(row.cell(columns.get("credit")))
+            # Not a break: Axis prints CLOSING BALANCE *after* this row, and
+            # stopping here would throw away the stated close and fall back to
+            # deriving it.
+            continue
 
         # Endpoint markers are checked before amounts. In a summary block the
         # label and its value sit in different columns, and the other cells of
@@ -300,7 +315,13 @@ def build_statement(
         period_end=transactions[-1].date,
         opening_source=opening_source,
         closing_source=closing_source,
+        stated_debits=stated_debits,
+        stated_credits=stated_credits,
     )
+
+
+def _is_totals_row(row: RawRow) -> bool:
+    return any(is_totals_row(cell) for cell in row.cells)
 
 
 def _amounts(row: RawRow, columns: dict[str, int]) -> tuple[Paise | None, Paise | None]:

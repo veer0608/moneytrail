@@ -61,6 +61,14 @@ class Statement:
     period_end: date | None = None
     opening_source: BalanceSource = BalanceSource.EXPLICIT
     closing_source: BalanceSource = BalanceSource.EXPLICIT
+    #: The bank's own column totals, when it prints them -- Axis labels the row
+    #: ``TRANSACTION TOTAL``. Free ground truth, and a check the chain and the
+    #: endpoints cannot make: those both pass if two rows are swapped between
+    #: the debit and credit columns in a way that leaves the balance intact.
+    #: ``None`` means the statement did not state them, never that they were
+    #: zero.
+    stated_debits: Paise | None = None
+    stated_credits: Paise | None = None
 
     @property
     def rows_with_balance(self) -> int:

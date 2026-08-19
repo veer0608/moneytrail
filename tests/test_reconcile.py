@@ -131,3 +131,63 @@ def test_report_names_the_failure(dropped_row_path):
 def test_transaction_amount_must_be_a_magnitude(amount):
     with pytest.raises(ValueError, match="magnitude"):
         _txn(1, amount)
+
+
+# --- the bank's own column totals -------------------------------------------
+
+
+def test_a_totals_row_is_not_read_as_a_transaction(axis_stated_totals_path):
+    """`TRANSACTION TOTAL` carries two amounts and no balance.
+
+    Read as a transaction it is a row that is somehow both a debit and a
+    credit, which is how Axis statements failed to parse at all.
+    """
+    statement = parse_statement(axis_stated_totals_path)
+
+    assert len(statement.transactions) == 3
+    assert statement.stated_debits == 1724_90
+    assert statement.stated_credits == 20000_00
+
+
+def test_a_statement_stating_its_own_totals_still_reconciles(axis_stated_totals_path):
+    result = reconcile(parse_statement(axis_stated_totals_path))
+
+    assert result.ok
+
+
+def test_stated_totals_catch_the_row_the_other_checks_cannot(
+    axis_stated_totals_dropped_path,
+):
+    """A row lost off the end of a statement with both endpoints derived.
+
+    The closing balance goes missing along with the row, so the chain stays
+    consistent and opening + credits - debits still equals the new close. Both
+    existing checks report a clean statement that is missing a transaction.
+    Only a figure the bank published separately notices.
+    """
+    statement = parse_statement(axis_stated_totals_dropped_path)
+    result = reconcile(statement)
+
+    assert not result.ok
+    kinds = {d.kind for d in result.discrepancies}
+    assert kinds == {"stated-debits"}  # chain and totals both pass
+    assert result.discrepancies[0].delta == 124_90
+
+
+def test_absent_totals_are_not_treated_as_zero(clean_statement_path):
+    """A statement that prints no totals must not be failed for having none."""
+    statement = parse_statement(clean_statement_path)
+
+    assert statement.stated_debits is None
+    assert statement.stated_credits is None
+    assert reconcile(statement).ok
+
+
+def test_a_narration_beginning_with_total_is_not_a_totals_row():
+    """"TOTAL ENERGIES FUEL" is a merchant, not the bank's arithmetic."""
+    from moneytrail.parsers.base import is_totals_row
+
+    assert is_totals_row("TRANSACTION TOTAL")
+    assert is_totals_row("Total")
+    assert not is_totals_row("TOTAL ENERGIES FUEL PUMP")
+    assert not is_totals_row("UPI/TOTAL/PAYMENT")

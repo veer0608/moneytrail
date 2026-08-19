@@ -8,7 +8,7 @@ reconciliation comes before categorisation; this file is how to work in it.
 - `moneytrail/` — the package (`cli.py`, `llm.py`, `export.py`, parsers, reconciliation)
 - `moneytrail/web.py` — the hosted front-end's core, framework-free; `api.py` is
   the FastAPI layer and `static/index.html` the single page
-- `tests/` — 435 tests, run from the repo root
+- `tests/` — 440 tests, run from the repo root
 - `evals/` — `runner.py` and `questions.yaml` (the golden set), plus saved run JSON
 - `statements/` — sample inputs
 - `scripts/` — fixture builders
@@ -20,7 +20,7 @@ Run from the repo root. Python 3.11.
 
 ```bash
 pip install -e ".[dev]"     # pytest + pdfplumber + openpyxl + reportlab + pyyaml
-python -m pytest -q         # 435 tests
+python -m pytest -q         # 440 tests
 moneytrail --help           # console script, defined in pyproject.toml
 python -m moneytrail.api    # the hosted front-end on :8000, needs the web extra
 ```
@@ -57,6 +57,12 @@ this project reads well.
   sentence is the reason anyone would trust it over a converter that keeps files.
 - **The deterministic path is gated at 100%.** CI holds the regex parser at 100% on
   the questions it was built for, and never gates on a model.
+- **Three checks, not two.** Where a bank prints its own column totals (Axis
+  labels the row `TRANSACTION TOTAL`) they are parsed into `stated_debits` /
+  `stated_credits` and compared. This is not redundant with the other two: when
+  both endpoints are derived, a row lost off the *end* takes the closing balance
+  with it, and chain and totals both pass on a statement missing a transaction.
+  `None` means not stated, never zero.
 - **Format differences are normalised, not enumerated.** The alias tables in
   `parsers/table.py` are a losing game on their own: they already carried
   `balance (inr)` with a space, which matched nothing ICICI actually writes.
