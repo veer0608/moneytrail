@@ -381,3 +381,64 @@ def test_an_oversized_body_is_refused_before_it_is_read(client):
 def test_health_is_never_rate_limited(client):
     """The platform pings this constantly; a 429 would read as a dead service."""
     assert all(client.get("/health").status_code == 200 for _ in range(30))
+
+
+# --- the landing page -------------------------------------------------------
+
+
+def test_the_sample_is_a_statement_that_does_not_reconcile(client):
+    """The demo has to fail, or it demonstrates nothing.
+
+    A visitor will not upload their own bank statement to prove the point, so
+    the page proves it with a file of its own -- and that file must be one the
+    reconciler actually catches, not a plausible-looking prop.
+    """
+    from moneytrail.web import process
+
+    body = client.get("/api/sample").json()
+    result = process([(body["filename"], body["content"].encode())])
+
+    assert result.total == 1
+    assert result.tiles[0].status == FAILED
+    assert any("649.00" in note for note in result.tiles[0].notes)
+
+
+def test_the_sample_looks_plausible_until_it_is_checked(client):
+    """Its own closing balance agrees with its own last row.
+
+    That is what makes the demo honest: nothing about the file looks wrong
+    until the totals are checked against the opening balance.
+    """
+    body = client.get("/api/sample").json()
+    lines = [l for l in body["content"].splitlines() if l.strip()]
+
+    assert lines[-1].endswith("96170.60")  # stated close
+    assert "96170.60" in lines[-2]  # and the last row's running balance
+
+
+def test_pricing_carries_what_the_page_cannot_hardcode(client, monkeypatch):
+    body = client.get("/api/pricing").json()
+
+    assert "price" in body and "period" in body
+    assert body["source_url"].startswith("https://")
+
+
+def test_no_price_is_shown_rather_than_an_invented_one(client, monkeypatch):
+    monkeypatch.delenv("MONEYTRAIL_PRICE", raising=False)
+
+    assert client.get("/api/pricing").json()["price"] == ""
+
+
+def test_the_page_still_contains_no_absolute_url(client):
+    """Every outbound link is handed over at runtime instead.
+
+    Keeping this mechanical is the point: "loads nothing from anywhere else"
+    stays checkable by reading the file, rather than by trusting that whoever
+    added a link thought about it.
+    """
+    body = client.get("/").text
+
+    assert "http://" not in body
+    assert "https://" not in body
+    assert "src=" not in body
+    assert "@import" not in body

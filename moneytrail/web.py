@@ -68,6 +68,40 @@ FORMATS = {
 
 STATIC = Path(__file__).parent / "static"
 
+#: Handed to the page at runtime rather than written into it. The served page
+#: is asserted to contain no absolute URL at all, which is what makes "this
+#: page loads nothing from anywhere else" checkable by reading it -- a rule
+#: worth keeping strict enough to be mechanical, even for an outbound link
+#: that fetches nothing until it is clicked.
+SOURCE_URL = "https://github.com/veer0608/moneytrail"
+
+#: A statement with the ₹649 Netflix row deleted, served by ``/api/sample`` so
+#: the page can demonstrate the one thing that matters without asking a
+#: stranger to upload their bank statement to prove it.
+#:
+#: Held as a string rather than a file for two reasons: `.csv` is gitignored
+#: (this repository must never contain a real statement) so a demo file would
+#: need an exception and would sit one careless commit away from a real one,
+#: and a synthetic statement in source can be read and checked by anyone
+#: wondering whether the demo is rigged. It is: the row is removed on purpose,
+#: and the arithmetic below is the bank's own.
+SAMPLE_NAME = "sample-statement-april.csv"
+SAMPLE_STATEMENT = """HDFC BANK LIMITED
+Statement of account
+Account No: XXXXXXXX4471
+Period: 01/04/2025 to 30/04/2025
+
+Date,Narration,Chq./Ref.No.,Value Dt,Withdrawal Amt.,Deposit Amt.,Closing Balance
+01/04/25,OPENING BALANCE,,,,,45231.60
+01/04/25,UPI-SWIGGYINSTAMART-SWIGGY@YBL-YESB0000001-435820912-PAYMENT,435820912,01/04/25,412.00,,44819.60
+02/04/25,SALARY CREDIT ACME TECHNOLOGIES PVT LTD,NEFT0092331,02/04/25,,85000.00,129819.60
+07/04/25,UPI-MYNTRADESIGNS-MYNTRA@AXISBANK-UTIB0000441-509912834-ORDER,509912834,07/04/25,2499.00,,126671.60
+12/04/25,ACH D- HOUSING RENT SHOBHA APARTMENTS,ACH99120,12/04/25,28000.00,,98671.60
+18/04/25,UPI-MYNTRADESIGNS-MYNTRA@AXISBANK-UTIB0000441-511220945-REFUND,511220945,18/04/25,,2499.00,101170.60
+25/04/25,ATM WDL BANNERGHATTA RD BLR,ATM77213,25/04/25,5000.00,,96170.60
+30/04/25,CLOSING BALANCE,,,,,96170.60
+"""
+
 
 @dataclass(frozen=True)
 class Rejected:

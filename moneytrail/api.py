@@ -22,11 +22,14 @@ import os
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 
-from .licence import Licences, buy_url, from_environment
+from .licence import Licences, buy_url, from_environment, price
 from .web import (
     MAX_BODY_BYTES,
     MAX_FILE_BYTES,
     MAX_FILES,
+    SAMPLE_NAME,
+    SAMPLE_STATEMENT,
+    SOURCE_URL,
     STATIC,
     RateLimit,
     client_key,
@@ -80,12 +83,26 @@ def create_app(
         """
         from .licence import FREE_FILES
 
+        amount, period = price()
         return {
             "selling": gate.selling,
             "free_files": FREE_FILES,
             "paid_files": gate.paid_files,
             "buy_url": buy_url(),
+            "price": amount,
+            "period": period,
+            "source_url": SOURCE_URL,
         }
+
+    @app.get("/api/sample")
+    def sample():
+        """A statement with a row deliberately removed, for the demo.
+
+        Nobody uploads their bank statement to a site they have not decided to
+        trust yet, so the page has to be able to prove the point with its own
+        file. This is that file.
+        """
+        return {"filename": SAMPLE_NAME, "content": SAMPLE_STATEMENT}
 
     @app.get("/")
     def index():

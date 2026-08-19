@@ -53,6 +53,12 @@ PRODUCT_ENV = "MONEYTRAIL_GUMROAD_PRODUCT_ID"
 #: Where to send someone who needs a key. Shown by the page, never hardcoded
 #: into it, so the listing can move without a redeploy of the front-end.
 BUY_URL_ENV = "MONEYTRAIL_BUY_URL"
+#: What the page says it costs, e.g. "₹499". Kept out of the HTML because a
+#: price is the thing most likely to change and the worst thing to have to
+#: hunt for in markup -- and because it must match Gumroad exactly, which is
+#: only true if one of them is not a copy.
+PRICE_ENV = "MONEYTRAIL_PRICE"
+PERIOD_ENV = "MONEYTRAIL_PRICE_PERIOD"
 
 VERIFY_URL = "https://api.gumroad.com/v2/licenses/verify"
 #: urllib introduces itself as "Python-urllib/3.11" and gets 403'd by the
@@ -247,3 +253,13 @@ def from_environment(paid_files: int) -> Licences:
 
 def buy_url() -> str:
     return os.environ.get(BUY_URL_ENV, "")
+
+
+def price() -> tuple[str, str]:
+    """``(amount, period)`` as the page should print them.
+
+    Empty amount means the page says nothing about money -- the honest state
+    before a real listing exists, and better than shipping an invented number
+    that does not match the checkout it links to.
+    """
+    return os.environ.get(PRICE_ENV, ""), os.environ.get(PERIOD_ENV, "a month")

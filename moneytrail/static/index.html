@@ -2,15 +2,23 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>moneytrail — a ledger that proves it is all of it</title>
+<meta name="description" content="Bank statements to Excel, with a certificate that says whether a row went missing. Every other converter can drop one silently.">
 <!--
-  One file, no build step, no CDN, no analytics. Everything this page needs is
-  in it, which is checkable by reading it -- the same discipline the offline
-  HTML report keeps, and the only kind of privacy claim worth making.
+  One file, no build step, no CDN, no analytics, no fonts fetched from anyone.
+  Everything this page needs is in it, which is checkable by reading it -- the
+  same discipline the offline HTML report keeps, and the only kind of privacy
+  claim worth making on a page that asks for a bank statement.
+
+  The tool is at the top, not behind a call to action. The demo is the pitch:
+  a click that shows a missing row being caught does more than any paragraph
+  underneath it, and every step between a visitor and that moment costs some
+  of them.
 -->
 <style>
   :root {
     --ink: #16181d;
     --muted: #6b7280;
+    --faint: #9aa2ad;
     --line: #e4e7ec;
     --page: #fbfbfc;
     --card: #ffffff;
@@ -24,8 +32,8 @@
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --ink: #e8eaed; --muted: #9aa2ad; --line: #2c313a; --page: #14161a;
-      --card: #1b1e24; --accent: #6fd0ae;
+      --ink: #e8eaed; --muted: #9aa2ad; --faint: #6b7280; --line: #2c313a;
+      --page: #14161a; --card: #1b1e24; --accent: #6fd0ae;
       --ok: #6fd0ae; --ok-bg: #16302a;
       --weak: #e0b357; --weak-bg: #322a17;
       --bad: #f08a80; --bad-bg: #3a1f1d;
@@ -33,20 +41,29 @@
   }
   * { box-sizing: border-box; }
   body {
-    margin: 0; padding: 2.5rem 1.25rem 5rem;
+    margin: 0; padding: 0 1.25rem 6rem;
     background: var(--page); color: var(--ink);
-    font: 16px/1.55 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font: 16px/1.6 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
-  main { max-width: 54rem; margin: 0 auto; }
-  h1 { font-size: 1.6rem; margin: 0 0 .35rem; letter-spacing: -.02em; }
-  h2 { font-size: 1rem; margin: 2.5rem 0 .85rem; text-transform: uppercase;
-       letter-spacing: .09em; color: var(--muted); font-weight: 600; }
-  .lede { color: var(--muted); margin: 0 0 2rem; max-width: 42rem; }
-  .lede strong { color: var(--ink); font-weight: 600; }
+  main, section.wide > div { max-width: 54rem; margin: 0 auto; }
 
+  /* --- hero ------------------------------------------------------------- */
+  .hero { padding: 4rem 0 0; }
+  .mark { font-weight: 700; letter-spacing: -.02em; color: var(--accent);
+          font-size: .95rem; text-transform: lowercase; margin: 0 0 2.5rem; }
+  h1 { font-size: clamp(2rem, 5.5vw, 3rem); line-height: 1.1; margin: 0 0 1rem;
+       letter-spacing: -.035em; font-weight: 700; max-width: 20ch; }
+  .lede { font-size: 1.15rem; color: var(--muted); margin: 0 0 .75rem;
+          max-width: 44ch; }
+  .lede strong { color: var(--ink); font-weight: 600; }
+  .sub { color: var(--faint); font-size: .95rem; margin: 0 0 2.5rem;
+         max-width: 52ch; }
+
+  /* --- the tool --------------------------------------------------------- */
   #drop {
     border: 2px dashed var(--line); border-radius: 12px; background: var(--card);
-    padding: 2.75rem 1.5rem; text-align: center; cursor: pointer;
+    padding: 2.5rem 1.5rem; text-align: center; cursor: pointer;
     transition: border-color .15s, background .15s;
   }
   #drop:hover, #drop.over { border-color: var(--accent); background: var(--ok-bg); }
@@ -56,8 +73,8 @@
 
   .controls { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center;
               margin-top: 1.1rem; }
-  label.inline { font-size: .875rem; color: var(--muted); }
-  select, input[type=password] {
+  label.inline, span.inline { font-size: .875rem; color: var(--muted); }
+  select, input[type=password], input[type=text] {
     font: inherit; font-size: .9rem; padding: .5rem .6rem; color: var(--ink);
     background: var(--card); border: 1px solid var(--line); border-radius: 8px;
   }
@@ -66,8 +83,13 @@
     border-radius: 8px; background: var(--accent); color: #fff; cursor: pointer;
   }
   button:disabled { opacity: .5; cursor: default; }
+  button.ghost { background: transparent; color: var(--accent);
+                 border: 1px solid var(--line); }
   @media (prefers-color-scheme: dark) { button { color: #10241d; } }
 
+  /* --- results ---------------------------------------------------------- */
+  h2 { font-size: 1rem; margin: 2.5rem 0 .85rem; text-transform: uppercase;
+       letter-spacing: .09em; color: var(--muted); font-weight: 600; }
   .banner { margin: 2rem 0 0; padding: 1rem 1.15rem; border-radius: 10px;
             border-left: 4px solid; font-weight: 600; }
   .banner.ok   { background: var(--ok-bg);   border-color: var(--ok);   color: var(--ok); }
@@ -107,18 +129,69 @@
   summary { cursor: pointer; color: var(--muted); font-size: .9rem; }
   pre { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
         padding: 1rem; overflow-x: auto; font-size: .8rem; line-height: 1.5; }
-  footer { margin-top: 3.5rem; padding-top: 1.5rem; border-top: 1px solid var(--line);
+
+  /* --- the argument ----------------------------------------------------- */
+  .rule { border: 0; border-top: 1px solid var(--line); margin: 4.5rem 0 0; }
+  section { padding: 3.5rem 0 0; }
+  section h3 { font-size: 1.45rem; letter-spacing: -.02em; margin: 0 0 .9rem;
+               max-width: 24ch; line-height: 1.25; }
+  section p { color: var(--muted); max-width: 62ch; margin: 0 0 1rem; }
+  section p strong { color: var(--ink); font-weight: 600; }
+
+  .grid { display: grid; gap: 1.5rem; margin-top: 2rem;
+          grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+  .grid h4 { margin: 0 0 .4rem; font-size: .95rem; }
+  .grid p { font-size: .9rem; margin: 0; }
+
+  .compare { width: 100%; border-collapse: collapse; margin-top: 1.75rem;
+             font-size: .92rem; }
+  .compare th, .compare td { text-align: left; padding: .7rem .5rem;
+                             border-bottom: 1px solid var(--line);
+                             vertical-align: top; }
+  .compare th { color: var(--muted); font-weight: 600; font-size: .8rem;
+                text-transform: uppercase; letter-spacing: .07em; }
+  .compare td:first-child { color: var(--ink); }
+  .compare .no { color: var(--bad); }
+  .compare .yes { color: var(--ok); font-weight: 600; }
+  .scroller { overflow-x: auto; }
+
+  .price { background: var(--card); border: 1px solid var(--line);
+           border-radius: 12px; padding: 1.75rem; margin-top: 2rem; }
+  .price .tiers { display: grid; gap: 1.75rem;
+                  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); }
+  .price h4 { margin: 0 0 .3rem; font-size: .8rem; text-transform: uppercase;
+              letter-spacing: .08em; color: var(--muted); }
+  .amount { font-size: 1.9rem; font-weight: 700; letter-spacing: -.03em;
+            margin: 0 0 .5rem; }
+  .amount small { font-size: .9rem; font-weight: 400; color: var(--muted);
+                  letter-spacing: 0; }
+  .price ul { margin: .75rem 0 0; padding-left: 1.1rem; color: var(--muted);
+              font-size: .9rem; }
+  .price li { margin-bottom: .3rem; }
+
+  .faq dt { font-weight: 600; margin-top: 1.5rem; }
+  .faq dd { margin: .4rem 0 0; color: var(--muted); max-width: 62ch; }
+
+  footer { margin-top: 4.5rem; padding-top: 1.75rem; border-top: 1px solid var(--line);
            color: var(--muted); font-size: .84rem; }
-  footer p { max-width: 42rem; }
+  footer p { max-width: 62ch; }
+  a { color: var(--accent); }
 </style>
 
 <main>
-  <h1>moneytrail</h1>
-  <p class="lede">
-    Bank and credit-card statements into one spreadsheet — with a certificate
-    that says whether anything went missing on the way.
-    <strong>Every other converter can drop a row without telling you.</strong>
-  </p>
+  <div class="hero">
+    <p class="mark">moneytrail</p>
+    <h1>Prove the spreadsheet is all of it.</h1>
+    <p class="lede">
+      Bank and credit-card statements into one Excel file — with a certificate
+      saying whether a single row went missing on the way.
+    </p>
+    <p class="sub">
+      <strong>Every other converter can drop a row and stay quiet about it.</strong>
+      A wrapped narration, a page break, a total that lands in the wrong column —
+      and what you get back still looks like a perfectly good spreadsheet.
+    </p>
+  </div>
 
   <div id="drop" tabindex="0" role="button" aria-label="Choose statement files">
     <p><strong>Drop statements here</strong>, or click to choose</p>
@@ -137,6 +210,7 @@
     <label class="inline" for="password">PDF password</label>
     <input id="password" type="password" placeholder="only if locked" autocomplete="off">
     <button id="go" disabled>Reconcile</button>
+    <button id="demo" class="ghost" type="button">Try a broken one</button>
   </div>
 
   <div class="controls" id="licence-row" hidden>
@@ -148,17 +222,204 @@
 
   <div id="out" aria-live="polite"></div>
 
-  <footer>
+  <hr class="rule">
+
+  <section>
+    <h3>The failure you cannot see is the one that matters</h3>
     <p>
-      Your file is read inside the one request that uploads it and removed
-      before the reply is sent. Nothing is stored, logged or queued — there is
-      no database, so a second visit cannot see the first one's file. The
-      spreadsheet comes back inside that same reply and is assembled by your
-      browser, not fetched from a server.
+      Converting a statement is easy. Knowing the conversion was complete is
+      the hard part, and it is the part nobody does. A dropped row does not
+      announce itself — it leaves a shorter file that balances against nothing,
+      and the first sign of trouble is a client asking why a payment is absent
+      three months later.
     </p>
     <p>
-      Prefer it never to touch a server at all? The command-line version runs
-      entirely on your machine and is open source.
+      moneytrail checks every parse against arithmetic the bank already
+      published. The running-balance column has to move by exactly the amount
+      on each row, and opening plus credits minus debits has to equal the
+      stated close. <strong>Both, to the paisa.</strong> If either fails you
+      get the row number and the exact difference, before you have filed
+      anything.
+    </p>
+    <div class="grid">
+      <div>
+        <h4>Two independent checks</h4>
+        <p>The chain check finds where a fault is. The totals check finds
+           faults the chain cannot see — including rows lost off the end.</p>
+      </div>
+      <div>
+        <h4>Bound to the file, not the filename</h4>
+        <p>Each certificate carries the SHA-256 of the bytes that were read.
+           A filename says which file was meant; only a digest says which
+           one was actually opened.</p>
+      </div>
+      <div>
+        <h4>Failures are still delivered</h4>
+        <p>A statement that does not add up is exported anyway, stamped, with
+           the reason attached. Withholding it would only send you back to a
+           converter that stays quiet.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h3>What comes back</h3>
+    <p>
+      One workbook. Every transaction across every statement you dropped,
+      merged in date order, with the raw narration kept beside the resolved
+      merchant name so any row can still be found in the source PDF. Amounts
+      are exact decimals — summing the column is the first thing anyone does,
+      and it has to match the certificate printed beside it.
+    </p>
+    <p>
+      The certificate is the second sheet, in the same file. A proof that
+      travels separately from the thing it proves gets detached on the first
+      forward.
+    </p>
+    <div class="scroller">
+      <table class="compare">
+        <thead>
+          <tr><th>&nbsp;</th><th>Ordinary converters</th><th>moneytrail</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>PDF and scans to a spreadsheet</td>
+            <td class="yes">Yes</td><td class="yes">Yes</td>
+          </tr>
+          <tr>
+            <td>Merges several statements</td>
+            <td class="yes">Usually</td><td class="yes">Yes</td>
+          </tr>
+          <tr>
+            <td>Tells you a row was lost</td>
+            <td class="no">No</td><td class="yes">Row number and exact delta</td>
+          </tr>
+          <tr>
+            <td>Proof you can hand to a client</td>
+            <td class="no">No</td><td class="yes">Certificate, digest-bound</td>
+          </tr>
+          <tr>
+            <td>Keeps your statement afterwards</td>
+            <td class="no">Usually, on their servers</td>
+            <td class="yes">No. Deleted before the reply</td>
+          </tr>
+          <tr>
+            <td>Runs entirely on your own machine</td>
+            <td class="no">No</td><td class="yes">Yes, open source</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h3>Built for the people doing this a dozen times a month</h3>
+    <p>
+      Accountants, bookkeepers and CA firms converting client statements by
+      hand, or with a tool that cannot say whether it worked. If you have ever
+      re-keyed a page of a PDF because the last conversion looked wrong and you
+      could not prove it either way, this is for you.
+    </p>
+    <p>
+      It reads Indian bank and credit-card formats — the lakh grouping, the
+      <code>Cr</code>/<code>Dr</code> suffixes, the separate withdrawal and
+      deposit columns, the summary block bolted under the table, and the
+      password-locked PDFs banks email out. Card statements reconcile on a
+      different identity from bank statements, and are checked accordingly.
+    </p>
+  </section>
+
+  <section id="pricing">
+    <h3>Pricing</h3>
+    <p>
+      The certificate is free and always will be. It is the whole reason this
+      exists, and putting it behind a paywall would leave the free tier as one
+      more silent converter. What costs money is <strong>volume</strong> — the
+      part that saves a firm an afternoon.
+    </p>
+    <div class="price">
+      <div class="tiers">
+        <div>
+          <h4>Free</h4>
+          <p class="amount">₹0</p>
+          <p style="font-size:.9rem;margin:0">One statement at a time.</p>
+          <ul>
+            <li>Full reconciliation certificate</li>
+            <li>Excel or CSV export</li>
+            <li>No sign-up, no account</li>
+          </ul>
+        </div>
+        <div>
+          <h4>Licensed</h4>
+          <p class="amount" id="price-amount">—</p>
+          <p style="font-size:.9rem;margin:0">Batches, up to
+            <span id="paid-files">25</span> statements at once.</p>
+          <ul>
+            <li>Everything in free</li>
+            <li>Merge a year of statements in one pass</li>
+            <li>One key, no account to manage</li>
+          </ul>
+          <p style="margin-top:1.1rem" id="buy-slot"></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h3>Your statement is not our asset</h3>
+    <p>
+      It is read inside the one request that uploads it and removed before the
+      reply is sent. <strong>Nothing is stored, logged or queued.</strong>
+      There is no database, so a second visit cannot see the first one's file,
+      and there is no account for anyone to breach. The spreadsheet comes back
+      inside that same reply and is assembled by your browser rather than
+      fetched from a server — which is what keeps this side of it stateless.
+    </p>
+    <p>
+      To be exact rather than reassuring: the parsers read files, not bytes in
+      memory, so your statement really is written to a temporary directory for
+      the seconds it takes to parse. That directory is removed before the
+      response is built, and there is a test asserting it.
+    </p>
+    <p>
+      If that is still closer than you want it, the command-line version does
+      all of the same work without a network of any kind, and the source is
+      public.
+    </p>
+  </section>
+
+  <section>
+    <h3>Questions</h3>
+    <dl class="faq">
+      <dt>What if my statement does not reconcile?</dt>
+      <dd>You still get the spreadsheet, stamped, with the row number and the
+        exact difference. Usually it means the parse missed something — send it
+        over and it gets fixed, because a format that fails is a bug here, not
+        a bug in your bank.</dd>
+
+      <dt>Which banks does it read?</dt>
+      <dd>The parsers work from the shape of the table rather than a list of
+        banks, so most Indian formats work. The honest answer is that it is
+        proven against fewer of them than it will be; drop one in and the
+        certificate will tell you the truth either way, which is more than
+        anything else will do.</dd>
+
+      <dt>Do you keep my licence key?</dt>
+      <dd>It lives in your browser and travels with each upload to be checked.
+        There is no account behind it and nothing to reset.</dd>
+
+      <dt>Can I run it myself?</dt>
+      <dd>Yes. It is open source, installs with no dependencies for CSV, and
+        self-hosting never meets the paywall.</dd>
+    </dl>
+  </section>
+
+  <footer>
+    <p id="foot-links"></p>
+    <p>
+      moneytrail is a reconciliation tool, not an accounting service, and the
+      certificate reports arithmetic rather than opinion. Check anything you
+      file.
     </p>
   </footer>
 </main>
@@ -169,6 +430,7 @@
   const picked = document.getElementById("picked");
   const go = document.getElementById("go");
   const out = document.getElementById("out");
+  const demo = document.getElementById("demo");
 
   let chosen = [];
 
@@ -201,17 +463,17 @@
   const licence = document.getElementById("licence");
   const licenceRow = document.getElementById("licence-row");
   const licenceNote = document.getElementById("licence-note");
-  let pricing = { selling: false, free_files: 1, paid_files: 25, buy_url: "" };
+  let pricing = { selling: false, free_files: 1, paid_files: 25, buy_url: "", price: "" };
 
   try { licence.value = localStorage.getItem("moneytrail.licence") || ""; } catch (e) {}
   licence.addEventListener("change", () => {
     try { localStorage.setItem("moneytrail.licence", licence.value.trim()); } catch (e) {}
   });
 
-  function buyLink(url, text) {
-    // Built as a node rather than interpolated: the URL comes from the server's
-    // environment, and concatenating it into innerHTML would be an injection
-    // waiting for a careless deploy.
+  function link(url, text) {
+    // Built as a node rather than interpolated: the URL comes from the
+    // server's environment, and concatenating it into innerHTML would be an
+    // injection waiting for a careless deploy.
     const a = document.createElement("a");
     a.href = url;
     a.textContent = text;
@@ -226,16 +488,24 @@
       : state === "good" ? "var(--ok)" : "var(--muted)";
   }
 
-  // A self-hosted instance sells nothing, so it must not advertise a purchase
-  // its operator is not making. The page asks rather than assuming.
+  // The page asks what it costs rather than stating it. A price in markup is
+  // a price that drifts from the checkout it links to, and a self-hosted
+  // instance must not advertise a purchase its operator is not making.
   fetch("/api/pricing").then(r => r.json()).then(p => {
     pricing = p;
     const hint = document.getElementById("drop-hint");
+    document.getElementById("paid-files").textContent = p.paid_files;
+    if (p.source_url) {
+      document.getElementById("foot-links")
+        .appendChild(link(p.source_url, "Source on GitHub"));
+    }
+
     if (!p.selling) {
-      // Self-hosted: no tiers to explain, so the hint states the real ceiling.
       hint.textContent = `PDF, CSV, XLS or XLSX · up to ${p.paid_files} files`;
+      document.getElementById("pricing").hidden = true;
       return;
     }
+
     // Never advertise a batch the visitor cannot actually run. Saying "up to
     // 25" and then refusing the second file reads as a bug, not a price.
     const held = (localStorage.getItem("moneytrail.licence") || "").trim();
@@ -244,6 +514,26 @@
       : `PDF, CSV, XLS or XLSX · ${p.free_files} at a time without a key`;
     licenceRow.hidden = false;
     sayLicence("", `${p.free_files} statement at a time free · a key raises it to ${p.paid_files}`);
+
+    const amount = document.getElementById("price-amount");
+    if (p.price) {
+      amount.textContent = p.price;
+      const per = document.createElement("small");
+      per.textContent = " / " + p.period;
+      amount.appendChild(per);
+    } else {
+      // No price configured yet. Saying nothing beats inventing a number the
+      // checkout will contradict.
+      amount.textContent = "—";
+    }
+    if (p.buy_url) {
+      const slot = document.getElementById("buy-slot");
+      const button = link(p.buy_url, "Get a licence key →");
+      button.style.cssText =
+        "display:inline-block;font-weight:600;text-decoration:none;" +
+        "padding:.62rem 1.3rem;border-radius:8px;background:var(--accent);color:#fff";
+      slot.appendChild(button);
+    }
   }).catch(() => {});
 
   const VERDICT = { ok: "RECONCILED", weak: "RECONCILED*", failed: "NOT RECONCILED" };
@@ -278,7 +568,6 @@
     document.body.appendChild(a);
     a.click();
     a.remove();
-    // Revoked on the next tick: the click has already handed the blob over.
     setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
@@ -327,6 +616,25 @@
     if (save) save.addEventListener("click", () => download(result));
   }
 
+  // Nobody uploads a bank statement to a site they have not decided to trust
+  // yet. So the page proves the point with its own file first.
+  demo.addEventListener("click", async () => {
+    demo.disabled = true;
+    try {
+      const s = await (await fetch("/api/sample")).json();
+      const dt = new DataTransfer();
+      dt.items.add(new File([s.content], s.filename, { type: "text/csv" }));
+      input.files = dt.files;
+      choose(dt.files);
+      picked.textContent =
+        "sample statement, with one ₹649 row deliberately removed — " +
+        "the balances still look plausible";
+      go.click();
+    } finally {
+      demo.disabled = false;
+    }
+  });
+
   go.addEventListener("click", async () => {
     const body = new FormData();
     chosen.forEach(f => body.append("files", f));
@@ -345,7 +653,7 @@
         if (result.needs_licence && result.buy_url) {
           const p = document.createElement("p");
           p.style.marginTop = "1rem";
-          p.appendChild(buyLink(result.buy_url, "Get a licence key →"));
+          p.appendChild(link(result.buy_url, "Get a licence key →"));
           out.appendChild(p);
         }
       } else {
@@ -362,4 +670,8 @@
       go.disabled = false;
     }
   });
+
+  // The repository link comes from the server too. The page itself is asserted
+  // to contain no absolute URL, which is what makes "loads nothing from
+  // anywhere else" checkable by reading it rather than by trusting it.
 </script>

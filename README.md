@@ -350,6 +350,26 @@ that touches FastAPI. The page is a single HTML file with no build step, no CDN
 and no analytics — the same test the offline report has, asserting the served
 page contains no `http://`, no `src=` and no `@import`.
 
+### The landing page
+
+The tool sits at the top of it, not behind a call to action. For this product
+the demo *is* the pitch — a click that shows a missing row being caught argues
+better than any paragraph underneath it, and every step between a visitor and
+that moment costs some of them.
+
+`Try a broken one` loads a statement with one ₹649 row removed, whose own
+closing balance still agrees with its own last row, and reconciles it in front
+of you. It has to be the site's own file: nobody uploads a bank statement to
+prove a point to a page they have not decided to trust yet. There is a test
+asserting the sample actually fails, so the demo can never quietly become a
+prop that passes.
+
+Price, shop link and repository link are all served by `/api/pricing` rather
+than written into the markup. A price in HTML drifts from the checkout it links
+to, and the served page is asserted to contain **no absolute URL at all** —
+which is what keeps "this page loads nothing from anywhere else" checkable by
+reading it instead of trusting it.
+
 ### Paying for it
 
 The hosted service charges for volume: one statement at a time free, batches
