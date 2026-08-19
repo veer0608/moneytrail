@@ -195,6 +195,14 @@ def main(argv: "list[str] | None" = None) -> int:
     """
     import uvicorn
 
+    from .llm import load_dotenv
+
+    # Local runs pick the price and product id out of `.env`; a host sets them
+    # as real environment variables and has no `.env` for this to find. Done
+    # here rather than in `create_app` so the tests never inherit whatever
+    # happens to be sitting in the developer's file.
+    load_dotenv()
+
     hosted = "PORT" in os.environ
     parser = argparse.ArgumentParser(prog="moneytrail.api")
     parser.add_argument("--host", default=os.environ.get("HOST", "0.0.0.0" if hosted else "127.0.0.1"))

@@ -29,6 +29,19 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.9"
+
+      # What the page prints. Kept here rather than in the markup so it is one
+      # line to change and one place to check against the Gumroad listing --
+      # a price that disagrees with its own checkout is worse than no price.
+      - key: MONEYTRAIL_PRICE
+        value: "₹499"
+      - key: MONEYTRAIL_PRICE_PERIOD
+        value: "month"
+
+      # The two values that turn the gate on live in the dashboard, not here:
+      # MONEYTRAIL_GUMROAD_PRODUCT_ID and MONEYTRAIL_BUY_URL. Not because they
+      # are secret -- they are not -- but because a public repo is a bad habit
+      # to start with anything that identifies a payment account.
       # Statements are not written anywhere that survives a request, so there
       # is nothing to persist and no disk attached. Keep it that way.
       - key: PYTHONUNBUFFERED
