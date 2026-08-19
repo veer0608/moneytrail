@@ -5,8 +5,8 @@ reconciliation comes before categorisation; this file is how to work in it.
 
 ## Layout
 
-- `moneytrail/` — the package (`cli.py`, `llm.py`, parsers, reconciliation)
-- `tests/` — 339 tests, run from the repo root
+- `moneytrail/` — the package (`cli.py`, `llm.py`, `export.py`, parsers, reconciliation)
+- `tests/` — 364 tests, run from the repo root
 - `evals/` — `runner.py` and `questions.yaml` (the golden set), plus saved run JSON
 - `statements/` — sample inputs
 - `scripts/` — fixture builders
@@ -17,7 +17,7 @@ Run from the repo root. Python 3.11.
 
 ```bash
 pip install -e ".[dev]"     # pytest + pdfplumber + openpyxl + reportlab + pyyaml
-python -m pytest -q         # 339 tests
+python -m pytest -q         # 364 tests
 moneytrail --help           # console script, defined in pyproject.toml
 ```
 
@@ -42,6 +42,11 @@ this project reads well.
   sends a statement anywhere. A model is only called when explicitly asked.
 - **The deterministic path is gated at 100%.** CI holds the regex parser at 100% on
   the questions it was built for, and never gates on a model.
+- **An unverifiable parse is not a pass.** A card statement that prints no totals
+  has no discrepancies precisely because nothing could be compared. `export.py`
+  requires at least one check to have *run* before it stamps `RECONCILED`, and
+  there is a test for it. Treating "no discrepancies" as success would make the
+  certificate worthless on exactly the statements that need it most.
 
 ## Environment
 

@@ -87,6 +87,8 @@ python -m moneytrail check path/to/statement.pdf
 python -m moneytrail check path/to/statement.csv
 python -m moneytrail check path/to/a/folder
 
+python -m moneytrail export statements/ --out ledger.xlsx
+
 python -m moneytrail merchants statements/
 python -m moneytrail review statements/
 python -m moneytrail spend statements/
@@ -260,6 +262,61 @@ narrations are printed so you can see exactly what was matched to what.
 Card repayments and inter-account transfers turned out to be the same
 operation — find the credit on another document that this debit produced — so
 they share one matcher rather than two that can drift apart.
+
+### Getting it back out
+
+```bash
+python -m moneytrail export statements/ --out ledger.xlsx
+```
+
+Every transaction across every statement, merged in date order, with the raw
+narration kept beside the resolved merchant so a row can still be found in the
+source PDF. `.csv` needs nothing installed; `.xlsx` needs the `xlsx` extra.
+
+The point is what travels with it. Any PDF-to-spreadsheet converter can lose a
+row to a wrapped narration or a page break, and what lands in the spreadsheet
+still looks like a spreadsheet — the person importing it has no way to tell.
+So the export carries a **reconciliation certificate**: per source file, the
+arithmetic that was checked, the SHA-256 of the exact bytes it was checked
+against, and whether it held.
+
+```
+  source          hdfc_april_2025.csv
+  sha-256         1f733d152275ccb99eb97138e2dcd1952e0337709ae993b170eba7deb68d0a52
+  bank            HDFC
+  period          2025-04-01 to 2025-04-25
+  transactions    7
+  opening             ₹45,231.60
+  credits     +       ₹87,499.00
+  debits      -       ₹36,560.00
+  computed            ₹96,170.60
+  statement           ₹96,170.60
+  checks run      chain, totals
+  VERDICT         RECONCILED
+```
+
+The digest binds the certificate to bytes rather than to a filename: a filename
+says which file was *meant*, a digest says which bytes were actually read, and
+only the second survives being emailed around. An `.xlsx` export carries the
+certificate as a second sheet — a proof that travels separately from the thing
+it proves gets detached on the first forward.
+
+A statement that fails to reconcile is **still exported**. Withholding the data
+only sends you back to a converter that cannot tell you anything is wrong. It
+is written stamped instead: every row carries `reconciled = NO`, the certificate
+leads with the failure, and the exit code is 1.
+
+```
+NOT RECONCILED -- 1 statement(s) did not add up:
+  hdfc_april_2025_dropped_row.csv
+    row 10: expected ₹1,27,320.60, statement says ₹1,26,671.60 (off by -₹649.00)
+    statement total: expected ₹96,819.60, statement says ₹96,170.60 (off by -₹649.00)
+```
+
+Amounts are written as exact decimals, never floats — summing the column is the
+first thing anyone receiving this will do, and it has to match the certificate
+printed beside it. CSV is written with a BOM so Excel on Windows opens it as
+UTF-8 rather than turning every rupee sign into mojibake.
 
 ### The trust strip
 

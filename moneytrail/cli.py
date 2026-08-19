@@ -12,6 +12,7 @@ import sys
 import webbrowser
 from pathlib import Path
 
+from .export import render_certificates, write as write_export
 from .insights import by_category, roll_up
 from .linking import find_transfers, link_card_repayments, summarise_spend
 from .models import CardStatement, Statement
@@ -31,7 +32,25 @@ from .report import render
 MAX_PASSWORD_ATTEMPTS = 3
 
 
+def _use_utf8(stream) -> None:
+    """Windows consoles default to cp1252, which has no rupee sign.
+
+    Every amount printed here goes through ``format_paise``, so without this
+    the first FAILED report on a stock Windows terminal dies inside the codec
+    instead of showing the discrepancy it exists to show -- and the failure
+    path is the one that matters most.
+    """
+    try:
+        stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError):
+        # Redirected or wrapped streams may not be reconfigurable. Printing a
+        # replacement character beats refusing to start.
+        pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    _use_utf8(sys.stdout)
+    _use_utf8(sys.stderr)
     parser = argparse.ArgumentParser(prog="moneytrail")
     subcommands = parser.add_subparsers(dest="command", required=True)
 
@@ -78,6 +97,32 @@ def main(argv: list[str] | None = None) -> int:
         parents=[common],
         help="parse statements and verify they reconcile to the paisa",
     )
+    export = subcommands.add_parser(
+        "export",
+        parents=[common],
+        help=(
+            "write every transaction to one CSV or Excel file, with a "
+            "certificate saying whether it reconciles"
+        ),
+    )
+    export.add_argument(
+        "--out",
+        type=Path,
+        default=Path("moneytrail-ledger.csv"),
+        help=(
+            "where to write it. The suffix picks the format: .csv or .xlsx "
+            "(default moneytrail-ledger.csv)"
+        ),
+    )
+    export.add_argument(
+        "--certificate",
+        type=Path,
+        help=(
+            "where to write the certificate alongside a CSV export "
+            "(default: the export path with .certificate.txt). An .xlsx "
+            "export carries it as a second sheet, so this is not needed"
+        ),
+    )
     merchants = subcommands.add_parser(
         "merchants",
         parents=[common],
@@ -123,6 +168,14 @@ def main(argv: list[str] | None = None) -> int:
     prompt = not args.no_prompt
     if args.command == "check":
         return _check(args.paths, args.password, prompt=prompt)
+    if args.command == "export":
+        return _export(
+            args.paths,
+            args.password,
+            prompt=prompt,
+            out=args.out,
+            certificate=args.certificate,
+        )
     if args.command == "merchants":
         return _merchants(
             args.paths,
@@ -246,6 +299,72 @@ def _load_all(
         else:
             statements.append(statement)
     return statements, failures
+
+
+def _export(
+    paths: list[Path],
+    password: str | None = None,
+    *,
+    prompt: bool = True,
+    out: Path = Path("moneytrail-ledger.csv"),
+    certificate: Path | None = None,
+) -> int:
+    """Write the ledger out, and say plainly whether it can be trusted.
+
+    A statement that failed to reconcile is still exported. Withholding the
+    data would only push the user back to a converter that cannot tell them
+    anything is wrong -- so the file is written, stamped, and the exit code is
+    non-zero so a script cannot miss it.
+    """
+    statements, failures = _load_all(paths, password, prompt=prompt)
+    if statements is None:
+        return 2
+    if not statements:
+        return 1
+
+    try:
+        certificates = write_export(statements, out)
+    except ValueError as error:
+        print(str(error))
+        return 2
+    except ImportError:
+        print(f"writing {out.suffix} needs openpyxl: pip install 'moneytrail[xlsx]'")
+        print("  or export to .csv, which needs nothing installed")
+        return 2
+
+    rows = sum(len(statement.transactions) for statement in statements)
+    print(f"wrote {out.resolve()}")
+    print(f"  {rows} transactions from {len(statements)} statement(s)")
+    print("  it contains your financial data -- keep it out of version control")
+
+    if out.suffix.lower() != ".xlsx":
+        proof = certificate or out.with_suffix(out.suffix + ".certificate.txt")
+        proof.write_text(render_certificates(certificates), encoding="utf-8")
+        print(f"wrote {proof.resolve()}")
+    else:
+        print("  the certificate is the second sheet of the workbook")
+
+    unreconciled = [c for c in certificates if not c.reconciled]
+    print()
+    if unreconciled:
+        print(f"NOT RECONCILED -- {len(unreconciled)} statement(s) did not add up:")
+        for item in unreconciled:
+            print(f"  {Path(item.source).name}")
+            for failure in item.failures:
+                print(f"    {failure}")
+            for caveat in item.caveats:
+                print(f"    caveat: {caveat}")
+        print()
+        print("The export may be an incomplete copy of the source. Read the")
+        print("certificate before filing or importing it anywhere.")
+        return 1
+
+    print(f"RECONCILED -- all {len(certificates)} statement(s) add up to the paisa.")
+    for item in certificates:
+        for caveat in item.caveats:
+            print(f"  {Path(item.source).name}: caveat: {caveat}")
+
+    return 1 if failures else 0
 
 
 def _report(
