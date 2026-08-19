@@ -298,3 +298,50 @@ def test_a_refused_key_is_reported_even_when_the_upload_worked(
     assert response.status_code == 200
     assert body["licence"]["licensed"] is False
     assert body["licence"]["problem"]
+
+
+def test_the_verify_request_sends_the_parameters_gumroad_actually_reads():
+    """Gumroad ignores an unknown parameter rather than rejecting it.
+
+    So a misspelling is silent and the default applies. The default for
+    `increment_uses_count` is to increment, which would climb on every upload
+    -- this check runs per request, not per purchase -- and make the seller's
+    own "uses" column meaningless. `product_id` is likewise required for any
+    product created since January 2023; `product_permalink` is the legacy
+    spelling and would simply not match.
+    """
+    import urllib.parse
+    import urllib.request
+
+    from moneytrail import licence
+
+    seen = {}
+
+    class Answer:
+        def read(self):
+            return b'{"success": true, "purchase": {}}'
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def capture(request, timeout=None):
+        seen["url"] = request.full_url
+        seen["body"] = dict(urllib.parse.parse_qsl(request.data.decode()))
+        return Answer()
+
+    original = urllib.request.urlopen
+    urllib.request.urlopen = capture
+    try:
+        licence.verify_with_gumroad("prod_1", "KEY-123")
+    finally:
+        urllib.request.urlopen = original
+
+    assert seen["url"] == licence.VERIFY_URL
+    assert seen["body"] == {
+        "product_id": "prod_1",
+        "license_key": "KEY-123",
+        "increment_uses_count": "false",
+    }

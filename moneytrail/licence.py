@@ -183,15 +183,21 @@ def verify_with_gumroad(
 ) -> tuple[bool, str]:
     """``(entitled, problem)`` for one key. Raises ``OSError`` if unreachable.
 
-    ``increment_uses`` is false: this runs on every upload, and a counter that
-    climbs with each conversion would make Gumroad's "uses" column meaningless
-    and eventually trip a seller's own limits.
+    ``increment_uses_count`` is false: this runs on every upload, and a counter
+    that climbs with each conversion would make Gumroad's "uses" column
+    meaningless and eventually trip a seller's own limits.
+
+    The parameter is spelled ``increment_uses_count`` and not, as this first
+    had it, ``increment_uses``. An unknown parameter is not an error to
+    Gumroad -- it is ignored, and the default applies, which is to increment.
+    So the wrong spelling does exactly the thing the right one exists to
+    prevent, and says nothing while doing it.
     """
     body = urllib.parse.urlencode(
         {
             "product_id": product_id,
             "license_key": key,
-            "increment_uses": "false",
+            "increment_uses_count": "false",
         }
     ).encode()
     request = urllib.request.Request(
