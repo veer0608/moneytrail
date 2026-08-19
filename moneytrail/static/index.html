@@ -397,12 +397,21 @@
         over and it gets fixed, because a format that fails is a bug here, not
         a bug in your bank.</dd>
 
-      <dt>Which banks does it read?</dt>
+      <dt>Which banks and formats does it read?</dt>
       <dd>The parsers work from the shape of the table rather than a list of
-        banks, so most Indian formats work. The honest answer is that it is
-        proven against fewer of them than it will be; drop one in and the
-        certificate will tell you the truth either way, which is more than
-        anything else will do.</dd>
+        banks. <strong>CSV, XLS and XLSX exports are the solid path</strong> —
+        the kind you download from net banking — and HDFC and ICICI layouts are
+        both proven against real files.</dd>
+
+      <dt>Does it handle PDF statements?</dt>
+      <dd>Only partly, and it is worth being straight about which part.
+        A PDF that draws ruling lines around its table reads fine. Many banks
+        draw none, and print the narration wrapped across the lines above and
+        below the amounts — so a row is not a line, and that layout is not
+        read yet. If your PDF fails you will get an error rather than a wrong
+        answer, which is the whole point of the thing, but it will still be an
+        error. <strong>Export CSV or Excel from net banking if you can</strong>
+        — it is the better input regardless.</dd>
 
       <dt>Do you keep my licence key?</dt>
       <dd>It lives in your browser and travels with each upload to be checked.

@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from moneytrail import parse_statement, reconcile
-from moneytrail.parsers import PasswordRequired
+from moneytrail.parsers import PasswordRequired, UnparseableStatement
 
 
 def test_pdf_reconciles_to_the_paisa(pdf_path):
@@ -98,5 +98,66 @@ def test_a_pdf_with_no_table_is_rejected_rather_than_guessed_at(tmp_path):
     canvas.drawString(72, 720, "Dear customer, thank you for banking with us.")
     canvas.save()
 
-    with pytest.raises(Exception, match="no recognisable transaction table"):
+    # A letter has text on it, so the message must point at the missing table
+    # rather than at OCR -- there is nothing to scan-convert here.
+    with pytest.raises(Exception, match="no transaction table was recognised"):
         parse_statement(target)
+
+
+# --- PDFs this project did not draw itself ----------------------------------
+
+
+def test_an_unruled_pdf_loses_the_chain_check(unruled_pdf_path):
+    """The quiet failure, and the more dangerous of the two.
+
+    Strip the ruling and the transactions are still found -- but the
+    running-balance column is not, so the chain check silently stops running
+    and the statement still reports RECONCILED on half the evidence. Every real
+    bank PDF looked at so far is unruled, so this is the normal case, not the
+    exotic one.
+    """
+    statement = parse_statement(unruled_pdf_path)
+    result = reconcile(statement)
+
+    assert len(statement.transactions) == 7
+    assert result.ok
+    assert statement.rows_with_balance == 0
+    assert not result.chain_checked  # the fault localiser is gone
+
+
+def test_a_ruled_pdf_keeps_it(pdf_path):
+    """The same statement, ruled: every row carries its balance."""
+    statement = parse_statement(pdf_path)
+
+    assert statement.rows_with_balance == 7
+    assert reconcile(statement).chain_checked
+
+
+@pytest.mark.xfail(
+    reason=(
+        "narrations wrapping above and below the dated line mean a row is not "
+        "a line, which column-splitting cannot fix at any threshold. Rows have "
+        "to be assembled by finding the dated line and absorbing its "
+        "neighbours. This is the real ICICI layout and the blocker for PDFs."
+    ),
+    strict=True,
+)
+def test_a_wrapped_narration_pdf_parses(wrapped_pdf_path):
+    statement = parse_statement(wrapped_pdf_path)
+
+    assert len(statement.transactions) == 3
+    assert reconcile(statement).ok
+
+
+def test_the_failure_says_which_failure_it_was(wrapped_pdf_path):
+    """A page with text on it was read fine; recognising a table is what failed.
+
+    Blaming OCR sends someone off to scan-convert a document that was never
+    scanned, which is a long way to walk for no reason.
+    """
+    with pytest.raises(UnparseableStatement) as caught:
+        parse_statement(wrapped_pdf_path)
+
+    message = str(caught.value)
+    assert "no ruling lines" in message
+    assert "OCR" not in message

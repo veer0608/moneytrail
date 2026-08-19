@@ -263,6 +263,38 @@ Card repayments and inter-account transfers turned out to be the same
 operation — find the credit on another document that this debit produced — so
 they share one matcher rather than two that can drift apart.
 
+### What PDF support actually means
+
+Worth stating plainly, because "reads bank statement PDFs" is the claim every
+converter makes and this one is narrower than it sounds.
+
+The PDF path recovers a table from its **ruling** — the lines a document draws
+around its cells. That works, and the committed ruled fixture proves it. The
+problem is that the fixture is ruled because reportlab drew the borders, and
+real bank statements frequently draw none. Three third-party sample PDFs — two
+ICICI, one HDFC, from separate projects — report **zero lines, zero rects and
+zero edges** between them, and `extract_table()` returns `None` on all three.
+So every PDF this project had parsed successfully was one it generated itself,
+in the single easiest layout there is.
+
+Two fixtures now pin that, and they fail differently on purpose.
+
+`hdfc_april_2025_unruled.pdf` is the ruled fixture with the grid removed and
+nothing else changed. It still parses — but the running-balance column does
+not survive, so the chain check stops running and the statement **still reports
+RECONCILED on half the evidence**. That is the quieter failure and the more
+dangerous one.
+
+`icici_july_2026_wrapped.pdf` is the blocker, and reproduces the real ICICI
+layout: the narration wraps onto lines *above and below* the line carrying the
+date and the amounts. A row is no longer a line, and no column-splitting
+threshold fixes that. Rows have to be assembled by finding the dated line and
+absorbing its neighbours. It is a strict `xfail`, so whoever fixes it will be
+told to delete the marker.
+
+CSV, XLS and XLSX exports — the kind net banking hands you — are the solid
+path, and are proven against real HDFC and ICICI files.
+
 ### Getting it back out
 
 ```bash

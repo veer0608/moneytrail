@@ -70,9 +70,19 @@ class PdfStatementParser(StatementParser):
                     preamble=preamble,
                 )
 
+        # Two very different failures, and telling someone the wrong one sends
+        # them off to OCR a document that was never scanned. A page with text
+        # on it was read fine; what failed was recognising a table in it.
+        if any(line.strip() for line in preamble):
+            raise UnparseableStatement(
+                f"{path}: the text was read, but no transaction table was "
+                f"recognised in it. Statements that draw no ruling lines around "
+                f"their table are the usual cause -- the columns then have to be "
+                f"recovered from where the words sit, which this does not yet do."
+            )
         raise UnparseableStatement(
-            f"{path}: no recognisable transaction table found. If the PDF is a "
-            f"scan rather than digital text, it needs OCR first."
+            f"{path}: no text at all on the first page, so there is nothing to "
+            f"parse. A scanned or photographed statement needs OCR first."
         )
 
 

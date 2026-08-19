@@ -8,7 +8,7 @@ reconciliation comes before categorisation; this file is how to work in it.
 - `moneytrail/` — the package (`cli.py`, `llm.py`, `export.py`, parsers, reconciliation)
 - `moneytrail/web.py` — the hosted front-end's core, framework-free; `api.py` is
   the FastAPI layer and `static/index.html` the single page
-- `tests/` — 440 tests, run from the repo root
+- `tests/` — 443 tests + 1 strict xfail, run from the repo root
 - `evals/` — `runner.py` and `questions.yaml` (the golden set), plus saved run JSON
 - `statements/` — sample inputs
 - `scripts/` — fixture builders
@@ -20,7 +20,7 @@ Run from the repo root. Python 3.11.
 
 ```bash
 pip install -e ".[dev]"     # pytest + pdfplumber + openpyxl + reportlab + pyyaml
-python -m pytest -q         # 440 tests
+python -m pytest -q         # 443 tests, 1 xfailed
 moneytrail --help           # console script, defined in pyproject.toml
 python -m moneytrail.api    # the hosted front-end on :8000, needs the web extra
 ```
@@ -57,6 +57,17 @@ this project reads well.
   sentence is the reason anyone would trust it over a converter that keeps files.
 - **The deterministic path is gated at 100%.** CI holds the regex parser at 100% on
   the questions it was built for, and never gates on a model.
+- **PDF support is narrower than it looks, and the gap is pinned.** The PDF path
+  recovers a *ruled* table; every real bank PDF examined so far (two ICICI, one
+  HDFC, from separate third-party projects) draws no ruling at all — zero lines,
+  zero rects, `extract_table()` returns None. `hdfc_april_2025_unruled.pdf` shows
+  the quiet half: transactions are still found but the running-balance column is
+  not, so the chain check silently stops and the statement still says RECONCILED
+  on half the evidence. `icici_july_2026_wrapped.pdf` shows the blocker, as a
+  strict xfail: narrations wrap above *and below* the dated line, so a row is not
+  a line and no column-splitting threshold fixes it. Fixing it means assembling
+  rows from word positions by finding the dated line and absorbing its
+  neighbours. Do not claim PDF support without saying which half.
 - **Three checks, not two.** Where a bank prints its own column totals (Axis
   labels the row `TRANSACTION TOTAL`) they are parsed into `stated_debits` /
   `stated_credits` and compared. This is not redundant with the other two: when

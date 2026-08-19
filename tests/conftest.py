@@ -114,3 +114,23 @@ def axis_stated_totals_dropped_path() -> Path:
     row, so the chain stays consistent and the totals still add up.
     """
     return FIXTURES / "axis_stated_totals_dropped.csv"
+
+
+@pytest.fixture
+def unruled_pdf_path() -> Path:
+    """The ruled PDF fixture with its grid removed and nothing else changed.
+
+    Real bank PDFs draw no ruling: three third-party samples (two ICICI, one
+    HDFC, from separate projects) all report zero lines, zero rects and zero
+    edges. Built by scripts/make_unruled_pdf_fixture.py.
+    """
+    return FIXTURES / "hdfc_april_2025_unruled.pdf"
+
+
+@pytest.fixture
+def wrapped_pdf_path() -> Path:
+    """An ICICI-shaped PDF whose narrations wrap around the dated line.
+
+    The structure that actually defeats the parser on real statements.
+    """
+    return FIXTURES / "icici_july_2026_wrapped.pdf"
