@@ -129,6 +129,7 @@ class Tile:
     transactions: int
     digest: str
     checks: tuple[str, ...]
+    dates: str
     lines: tuple[tuple[str, str], ...]
     notes: tuple[str, ...] = ()
 
@@ -171,6 +172,7 @@ class Result:
                     "transactions": tile.transactions,
                     "digest": tile.digest,
                     "checks": list(tile.checks),
+                    "dates": tile.dates,
                     "lines": [list(pair) for pair in tile.lines],
                     "notes": list(tile.notes),
                 }
@@ -307,6 +309,8 @@ def _tile(certificate: Certificate, statement: Statement | CardStatement) -> Til
         transactions=certificate.transactions,
         digest=certificate.digest,
         checks=certificate.checks,
+        dates=certificate.date_order
+        + ("" if certificate.date_order_observed else ", assumed"),
         lines=tuple(lines),
         notes=certificate.failures + certificate.caveats,
     )

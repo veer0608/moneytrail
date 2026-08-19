@@ -69,6 +69,12 @@ class Statement:
     #: zero.
     stated_debits: Paise | None = None
     stated_credits: Paise | None = None
+    #: Which of ``03/04`` this statement meant by the day, and whether the file
+    #: settled it or the day-first default was assumed. Recorded because it is
+    #: the one reading the reconciliation gate cannot check: dates play no part
+    #: in the arithmetic, so a statement read the wrong way round still adds up.
+    date_order: str = "day-first"
+    date_order_observed: bool = True
 
     @property
     def rows_with_balance(self) -> int:

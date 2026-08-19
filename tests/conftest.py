@@ -134,3 +134,13 @@ def wrapped_pdf_path() -> Path:
     The structure that actually defeats the parser on real statements.
     """
     return FIXTURES / "icici_july_2026_wrapped.pdf"
+
+
+@pytest.fixture
+def us_statement_path() -> Path:
+    """A month-first statement, in the layout a US bank writes.
+
+    Read day-first it would put 03/04 in April, and still reconcile: the
+    arithmetic does not depend on dates, so nothing else in the tool notices.
+    """
+    return FIXTURES / "us_bank_march_2025.csv"

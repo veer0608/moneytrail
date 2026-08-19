@@ -51,6 +51,7 @@ jobs:
             icici_currency_headers.csv
             icici_july_2026_wrapped.pdf
             axis_stated_totals.csv
+            us_bank_march_2025.csv
           "
           for clean in $CLEAN; do
             echo "--- $clean"

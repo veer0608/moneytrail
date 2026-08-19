@@ -4,23 +4,46 @@ from __future__ import annotations
 
 import re
 from abc import ABC, abstractmethod
+from enum import Enum
 from datetime import date, datetime
 from pathlib import Path
+from typing import Sequence
 
 from ..models import Statement
 
-#: Seen in the wild across HDFC / ICICI / SBI / Kotak / Axis exports.
-DATE_FORMATS = (
-    "%d/%m/%y",
-    "%d/%m/%Y",
-    "%d-%m-%y",
-    "%d-%m-%Y",
-    "%d %b %Y",
-    "%d-%b-%Y",
-    "%d-%b-%y",
-    "%d %B %Y",
-    "%Y-%m-%d",
-)
+class DateOrder(str, Enum):
+    """Which of ``03/04`` is the day.
+
+    Undecidable for one date and usually decidable for a statement, which is
+    why this is inferred per file rather than configured. Everything about
+    ``moneytrail`` is built to fail loudly, and reading an American statement
+    day-first is the one failure the reconciliation gate cannot see: the
+    arithmetic does not depend on dates, so every check passes and every date
+    below the twelfth is silently wrong.
+    """
+
+    DAY_FIRST = "day-first"
+    MONTH_FIRST = "month-first"
+
+
+#: The ambiguous ones. Seen in the wild across HDFC / ICICI / SBI / Kotak /
+#: Axis exports, and identical in shape to what US banks write.
+_DAY_FIRST = ("%d/%m/%y", "%d/%m/%Y", "%d-%m-%y", "%d-%m-%Y")
+_MONTH_FIRST = ("%m/%d/%y", "%m/%d/%Y", "%m-%d-%y", "%m-%d-%Y")
+#: These name the month or lead with the year, so no reading of them is in
+#: doubt and they are accepted whichever way round the numeric ones turn out.
+_UNAMBIGUOUS = ("%d %b %Y", "%d-%b-%Y", "%d-%b-%y", "%d %B %Y", "%Y-%m-%d")
+
+#: Kept under its old name and its old meaning: the day-first reading.
+DATE_FORMATS = _DAY_FIRST + _UNAMBIGUOUS
+
+#: ``03/04/2025`` and ``3-4-25`` -- the shapes that can be read two ways.
+_NUMERIC_DATE = re.compile(r"^\s*(\d{1,2})[/-](\d{1,2})[/-](\d{2}|\d{4})\s*$")
+
+
+def formats_for(order: "DateOrder") -> tuple[str, ...]:
+    ambiguous = _MONTH_FIRST if order is DateOrder.MONTH_FIRST else _DAY_FIRST
+    return ambiguous + _UNAMBIGUOUS
 
 #: A masked account number, e.g. "XXXXXXXX4471" or "****4471". No leading \b --
 #: "*" is not a word character, so a boundary would never match the "****" form.
@@ -83,9 +106,9 @@ class StatementParser(ABC):
         """Read the file into a Statement, or raise UnparseableStatement."""
 
 
-def parse_date(text: str) -> date:
+def parse_date(text: str, order: DateOrder = DateOrder.DAY_FIRST) -> date:
     cleaned = text.strip()
-    for fmt in DATE_FORMATS:
+    for fmt in formats_for(order):
         try:
             return datetime.strptime(cleaned, fmt).date()
         except ValueError:
@@ -94,11 +117,81 @@ def parse_date(text: str) -> date:
 
 
 def looks_like_date(text: str) -> bool:
-    try:
-        parse_date(text)
-    except UnparseableStatement:
-        return False
-    return True
+    """Whether this cell is a date under *either* reading.
+
+    Deliberately not order-aware. This decides whether a row is a transaction,
+    and that question is settled before the file's date order is known --
+    ``12/31/2025`` is a date whatever a statement turns out to mean by
+    ``03/04``, and refusing to see it as one would drop the row entirely.
+    """
+    for order in (DateOrder.DAY_FIRST, DateOrder.MONTH_FIRST):
+        try:
+            parse_date(text, order)
+            return True
+        except UnparseableStatement:
+            continue
+    return False
+
+
+def infer_date_order(texts: Sequence[str]) -> tuple[DateOrder, bool]:
+    """``(order, observed)`` for a statement's dates.
+
+    ``observed`` is False when nothing in the file settled it and the
+    day-first default was assumed.
+
+    Two signals, strongest first. A component above twelve cannot be a month,
+    so one such date decides the whole file -- and any statement covering more
+    than twelve days contains one. Failing that, statements run forwards: if
+    only one reading puts the dates in order, it is the reading.
+
+    Both signals at once means the file disagrees with itself, which is a
+    parse fault worth raising rather than a preference worth picking.
+    """
+    pairs: list[tuple[int, int]] = []
+    for text in texts:
+        found = _NUMERIC_DATE.match(text or "")
+        if found:
+            pairs.append((int(found.group(1)), int(found.group(2))))
+
+    if not pairs:
+        # Nothing ambiguous in the file: every date named its month or led
+        # with its year, and the order cannot be got wrong.
+        return DateOrder.DAY_FIRST, True
+
+    day_first = any(first > 12 for first, _ in pairs)
+    month_first = any(second > 12 for _, second in pairs)
+
+    if day_first and month_first:
+        raise UnparseableStatement(
+            "dates cannot be read consistently: some put a number above 12 "
+            "first and others put one second, so no single order fits the file"
+        )
+    if day_first:
+        return DateOrder.DAY_FIRST, True
+    if month_first:
+        return DateOrder.MONTH_FIRST, True
+
+    ascending = {
+        order: _runs_forwards(texts, order)
+        for order in (DateOrder.DAY_FIRST, DateOrder.MONTH_FIRST)
+    }
+    if ascending[DateOrder.DAY_FIRST] != ascending[DateOrder.MONTH_FIRST]:
+        decided = next(o for o, ok in ascending.items() if ok)
+        return decided, True
+
+    # Every date at or below the twelfth, and chronological either way. A
+    # genuinely undecidable file -- rare, and only on short statements.
+    return DateOrder.DAY_FIRST, False
+
+
+def _runs_forwards(texts: Sequence[str], order: DateOrder) -> bool:
+    read: list[date] = []
+    for text in texts:
+        try:
+            read.append(parse_date(text, order))
+        except UnparseableStatement:
+            continue
+    return bool(read) and read == sorted(read)
 
 
 #: Banks label the money columns with the currency: ``Withdrawal Amount(INR)``,

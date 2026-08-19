@@ -101,6 +101,12 @@ class Certificate:
     failures: tuple[str, ...] = ()
     period_start: date | None = None
     period_end: date | None = None
+    #: How ``03/04`` was read, and whether the file settled it. Reported rather
+    #: than treated as a caveat: on a real month of transactions some day is
+    #: above the twelfth and the order is observed, so downgrading every short
+    #: statement would train people to ignore the colour that means something.
+    date_order: str = "day-first"
+    date_order_observed: bool = True
     opening: Paise | None = None
     credits: Paise | None = None
     debits: Paise | None = None
@@ -137,6 +143,8 @@ class Certificate:
             ]
 
         checks = ", ".join(self.checks) if self.checks else "none available"
+        how = self.date_order + ("" if self.date_order_observed else ", assumed")
+        lines.append(f"  dates read as   {how}")
         lines.append(f"  checks run      {checks}")
         lines.append(f"  VERDICT         {self.verdict}")
         lines += [f"    caveat: {c}" for c in self.caveats]
@@ -181,6 +189,8 @@ def _certify_bank(statement: Statement) -> Certificate:
         failures=tuple(d.describe() for d in result.discrepancies),
         period_start=statement.period_start,
         period_end=statement.period_end,
+        date_order=statement.date_order,
+        date_order_observed=statement.date_order_observed,
         opening=statement.opening_balance,
         credits=result.credits,
         debits=result.debits,

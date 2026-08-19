@@ -16,7 +16,9 @@ from typing import Sequence
 from ..models import BalanceSource, Direction, Statement, Transaction
 from ..money import Paise, is_placeholder, parse_optional_amount
 from .base import (
+    DateOrder,
     UnparseableStatement,
+    infer_date_order,
     is_closing_row,
     is_opening_row,
     is_summary_heading,
@@ -217,6 +219,16 @@ def build_statement(
     columns: dict[str, int],
     rows: Sequence[RawRow],
 ) -> Statement:
+    # Which of 03/04 is the day, settled from the whole file before a single
+    # row is read. Getting this wrong is the one fault the reconciliation gate
+    # cannot see: the arithmetic does not depend on dates, so an American
+    # statement read day-first passes every check with every date below the
+    # twelfth silently wrong.
+    date_at = columns.get("date")
+    date_order, order_observed = infer_date_order(
+        [row.cell(date_at) for row in rows] if date_at is not None else []
+    )
+
     transactions: list[Transaction] = []
     opening: Paise | None = None
     stated_debits: Paise | None = None
@@ -307,12 +319,12 @@ def build_statement(
             Transaction(
                 row=row.number,
                 page=row.page,
-                date=parse_date(row.cell(columns.get("date"))),
+                date=parse_date(row.cell(columns.get("date")), date_order),
                 narration=narration,
                 direction=Direction.DEBIT if debit is not None else Direction.CREDIT,
                 amount=abs(amount),
                 balance=balance,
-                value_date=_optional_date(row.cell(columns.get("value_date"))),
+                value_date=_optional_date(row.cell(columns.get("value_date")), date_order),
             )
         )
 
@@ -352,6 +364,8 @@ def build_statement(
         closing_source=closing_source,
         stated_debits=stated_debits,
         stated_credits=stated_credits,
+        date_order=date_order.value,
+        date_order_observed=order_observed,
     )
 
 
@@ -497,8 +511,8 @@ def _any_amount(row: RawRow, columns: dict[str, int]) -> Paise | None:
     return None
 
 
-def _optional_date(text: str):
-    return parse_date(text) if text and looks_like_date(text) else None
+def _optional_date(text: str, order: DateOrder = DateOrder.DAY_FIRST):
+    return parse_date(text, order) if text and looks_like_date(text) else None
 
 
 def _where(row: RawRow) -> str:

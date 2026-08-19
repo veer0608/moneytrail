@@ -20,7 +20,12 @@ from typing import Sequence
 
 from ..models import CardStatement, CardSummary, Direction, Transaction
 from ..money import Paise, parse_optional_amount
-from .base import UnparseableStatement, looks_like_date, parse_date
+from .base import (
+    UnparseableStatement,
+    infer_date_order,
+    looks_like_date,
+    parse_date,
+)
 from .table import RawRow, normalise_header
 
 #: Labels no bank statement carries. Deliberately excludes "closing balance",
@@ -73,6 +78,13 @@ def build_card_statement(
     grid: Sequence[RawRow],
 ) -> CardStatement:
     """``rows`` are the transaction rows; ``grid`` is every row, for the summary."""
+    # Same reading the bank path settles, for the same reason: nothing in a
+    # card's arithmetic depends on a date, so the wrong order passes silently.
+    date_at = columns.get("date")
+    date_order, _ = infer_date_order(
+        [row.cell(date_at) for row in rows] if date_at is not None else []
+    )
+
     transactions: list[Transaction] = []
 
     for row in rows:
@@ -94,7 +106,7 @@ def build_card_statement(
             Transaction(
                 row=row.number,
                 page=row.page,
-                date=parse_date(date_text),
+                date=parse_date(date_text, date_order),
                 narration=row.cell(columns.get("narration")),
                 direction=direction,
                 amount=abs(amount),

@@ -9,7 +9,7 @@ reconciliation comes before categorisation; this file is how to work in it.
 - `moneytrail/parsers/words.py` — grid recovery for PDFs that draw no table
 - `moneytrail/web.py` — the hosted front-end's core, framework-free; `api.py` is
   the FastAPI layer and `static/index.html` the single page
-- `tests/` — 466 tests, run from the repo root
+- `tests/` — 481 tests, run from the repo root
 - `evals/` — `runner.py` and `questions.yaml` (the golden set), plus saved run JSON
 - `statements/` — sample inputs
 - `scripts/` — fixture builders
@@ -21,7 +21,7 @@ Run from the repo root. Python 3.11.
 
 ```bash
 pip install -e ".[dev]"     # pytest + pdfplumber + openpyxl + reportlab + pyyaml
-python -m pytest -q         # 466 tests
+python -m pytest -q         # 481 tests
 moneytrail --help           # console script, defined in pyproject.toml
 python -m moneytrail.api    # the hosted front-end on :8000, needs the web extra
 ```
@@ -86,6 +86,15 @@ this project reads well.
   it did: five fixtures including both word-position PDFs sat unlisted while their
   unit tests passed, so that whole path could have broken with CI green. Adding a
   fixture means naming it in `ci.yml` or exempting it with a reason.
+- **Date order is inferred per file, never configured.** `03/04` is undecidable
+  alone and usually decidable across a statement: a component above twelve
+  cannot be a month, and failing that, statements run forwards. This is the one
+  reading the reconciliation gate cannot check — dates play no part in the
+  arithmetic, so an American statement read day-first passes every check with
+  every date below the twelfth silently wrong. A file that contradicts itself
+  raises. A genuinely undecidable one is marked `assumed` on the certificate
+  rather than downgraded, because a third of short statements are undecidable
+  and colouring them all amber would teach people to ignore amber.
 - **Three checks, not two.** Where a bank prints its own column totals (Axis
   labels the row `TRANSACTION TOTAL`) they are parsed into `stated_debits` /
   `stated_credits` and compared. This is not redundant with the other two: when
