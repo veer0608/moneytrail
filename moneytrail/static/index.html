@@ -183,8 +183,8 @@
     <p class="mark">moneytrail</p>
     <h1>Prove the spreadsheet is all of it.</h1>
     <p class="lede">
-      Bank and credit-card statements into one Excel file — with a certificate
-      saying whether a single row went missing on the way.
+      Drop the CSV or Excel statement your net banking gives you. Get back one
+      merged ledger — and a certificate proving not a single row went missing.
     </p>
     <p class="sub">
       <strong>Every other converter can drop a row and stay quiet about it.</strong>
@@ -195,7 +195,7 @@
 
   <div id="drop" tabindex="0" role="button" aria-label="Choose statement files">
     <p><strong>Drop statements here</strong>, or click to choose</p>
-    <p class="hint" id="drop-hint">PDF, CSV, XLS or XLSX</p>
+    <p class="hint" id="drop-hint">CSV or Excel from net banking · PDF also read</p>
     <input id="files" type="file" multiple hidden
            accept=".pdf,.csv,.tsv,.txt,.xls,.xlsx">
   </div>
@@ -283,8 +283,13 @@
         </thead>
         <tbody>
           <tr>
-            <td>PDF and scans to a spreadsheet</td>
+            <td>CSV and Excel exports to one merged ledger</td>
             <td class="yes">Yes</td><td class="yes">Yes</td>
+          </tr>
+          <tr>
+            <td>Scanned or photographed statements</td>
+            <td class="yes">Often, via OCR</td>
+            <td class="no">No — needs real text, and says so</td>
           </tr>
           <tr>
             <td>Merges several statements</td>
@@ -321,11 +326,19 @@
       could not prove it either way, this is for you.
     </p>
     <p>
-      It reads Indian bank and credit-card formats — the lakh grouping, the
-      <code>Cr</code>/<code>Dr</code> suffixes, the separate withdrawal and
-      deposit columns, the summary block bolted under the table, and the
+      It is built for Indian formats — the lakh grouping, the <code>Cr</code>
+      and <code>Dr</code> suffixes, the separate withdrawal and deposit
+      columns, the summary block bolted under the table, the
       password-locked PDFs banks email out. Card statements reconcile on a
-      different identity from bank statements, and are checked accordingly.
+      different identity from bank statements and are checked accordingly.
+    </p>
+    <p>
+      <strong>Proven so far against real HDFC and ICICI files.</strong> The
+      parsers work from the shape of a table rather than a list of banks, so
+      others are likely to work — but "likely" is the honest word, and it is
+      worth knowing which one you are being given. If yours fails you will get
+      an error naming the row, not a wrong answer. Send it over and it becomes
+      a fix.
     </p>
   </section>
 
@@ -510,7 +523,7 @@
     }
 
     if (!p.selling) {
-      hint.textContent = `PDF, CSV, XLS or XLSX · up to ${p.paid_files} files`;
+      hint.textContent = `CSV or Excel from net banking · PDF also read · up to ${p.paid_files} files`;
       document.getElementById("pricing").hidden = true;
       return;
     }
@@ -519,8 +532,8 @@
     // 25" and then refusing the second file reads as a bug, not a price.
     const held = (localStorage.getItem("moneytrail.licence") || "").trim();
     hint.textContent = held
-      ? `PDF, CSV, XLS or XLSX · up to ${p.paid_files} files`
-      : `PDF, CSV, XLS or XLSX · ${p.free_files} at a time without a key`;
+      ? `CSV or Excel from net banking · PDF also read · up to ${p.paid_files} files`
+      : `CSV or Excel from net banking · PDF also read · ${p.free_files} at a time`;
     licenceRow.hidden = false;
     sayLicence("", `${p.free_files} statement at a time free · a key raises it to ${p.paid_files}`);
 
