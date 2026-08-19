@@ -598,7 +598,19 @@
     const weak = result.tiles.filter(t => t.status === "weak").length;
     let cls = "ok", headline, detail;
 
-    if (failed > 0) {
+    if (result.total === 0) {
+      // Nothing was read at all. Without this the counts are 0 and 0, "failed"
+      // is not greater than zero, and it falls through to the green branch --
+      // which announced "Reconciled — all 0 add up to the paisa" over a file
+      // it had just refused. A reassuring verdict on no evidence is the exact
+      // failure this whole tool exists to prevent, arriving in its own UI.
+      cls = "failed";
+      headline = result.rejected.length === 1
+        ? "Could not read that file"
+        : `Could not read any of those ${result.rejected.length} files`;
+      detail = "Nothing was reconciled, because nothing was parsed. " +
+               "The reason for each is below.";
+    } else if (failed > 0) {
       cls = "failed";
       headline = `Not reconciled — ${failed} of ${result.total} did not add up`;
       detail = "The spreadsheet may be an incomplete copy of the source. " +

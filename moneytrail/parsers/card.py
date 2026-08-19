@@ -199,7 +199,10 @@ def _direction_and_amount(
     value = parse_optional_amount(raw)
     if value is None:
         return Direction.DEBIT, None
-    # "Cr" marks money coming off the balance; so does a negative. Everything
-    # else is a purchase.
-    credited = raw.strip().lower().endswith("cr") or value < 0
+    # "Cr" marks money coming off the balance; so does a negative, and so does
+    # the leading "+" HDFC puts on a payment -- on a card the sign is about the
+    # balance owed, not the account, so a plus is money coming off what you owe.
+    # Everything else is a purchase.
+    cleaned = raw.strip().lower()
+    credited = cleaned.endswith("cr") or value < 0 or cleaned.startswith("+")
     return (Direction.CREDIT if credited else Direction.DEBIT), value

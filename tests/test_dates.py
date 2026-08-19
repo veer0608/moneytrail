@@ -164,3 +164,29 @@ def test_an_assumed_order_says_so(clean_statement_path, tmp_path):
     )
 
     assert "assumed" in certify(parse_statement(short)).render()
+
+
+# --- a real HDFC credit-card statement --------------------------------------
+
+
+def test_a_date_carrying_a_time_still_parses():
+    """HDFC's card statements stamp the time beside the date in one cell.
+
+    ``22/06/2026| 23:14`` failing to parse loses the whole transaction, and
+    nothing downstream is finer-grained than a day.
+    """
+    from datetime import date
+
+    assert parse_date("22/06/2026| 23:14") == date(2026, 6, 22)
+    assert parse_date("22/06/2026 | 23:14:07") == date(2026, 6, 22)
+    assert parse_date("22/06/2026, 11:14 PM") == date(2026, 6, 22)
+    assert looks_like_date("22/06/2026| 23:14")
+
+
+def test_a_time_qualifier_on_the_header_still_names_the_date_column():
+    from moneytrail.parsers.base import normalise_header
+
+    assert normalise_header("DATE & TIME") == "date"
+    assert normalise_header("Txn Date and Time") == "txn date"
+    # A column genuinely called Time is not a date column wearing a qualifier.
+    assert normalise_header("Time") == "time"

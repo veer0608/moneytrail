@@ -9,7 +9,7 @@ reconciliation comes before categorisation; this file is how to work in it.
 - `moneytrail/parsers/words.py` — grid recovery for PDFs that draw no table
 - `moneytrail/web.py` — the hosted front-end's core, framework-free; `api.py` is
   the FastAPI layer and `static/index.html` the single page
-- `tests/` — 482 tests, run from the repo root
+- `tests/` — 488 tests, run from the repo root
 - `evals/` — `runner.py` and `questions.yaml` (the golden set), plus saved run JSON
 - `statements/` — sample inputs
 - `scripts/` — fixture builders
@@ -21,7 +21,7 @@ Run from the repo root. Python 3.11.
 
 ```bash
 pip install -e ".[dev]"     # pytest + pdfplumber + openpyxl + reportlab + pyyaml
-python -m pytest -q         # 482 tests
+python -m pytest -q         # 488 tests
 moneytrail --help           # console script, defined in pyproject.toml
 python -m moneytrail.api    # the hosted front-end on :8000, needs the web extra
 ```
@@ -86,6 +86,12 @@ this project reads well.
   it did: five fixtures including both word-position PDFs sat unlisted while their
   unit tests passed, so that whole path could have broken with CI green. Adding a
   fixture means naming it in `ci.yml` or exempting it with a reason.
+- **The rupee sign arrives as the letter C.** Indian banks embed a rupee font and
+  map the symbol onto an ASCII codepoint — HDFC's card statements use `ITFRupee`,
+  where the glyph drawn at `C` *is* `₹`. `words.py` restores it from the font,
+  which is the only thing that knows. Do not "fix" this by treating a bare C
+  before digits as currency: a reference number like `C123456` would silently
+  become an amount.
 - **Date order is inferred per file, never configured.** `03/04` is undecidable
   alone and usually decidable across a statement: a component above twelve
   cannot be a month, and failing that, statements run forwards. This is the one

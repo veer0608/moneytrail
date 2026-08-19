@@ -59,3 +59,23 @@ def test_integer_paise_do_not_drift():
     # The float version of this is 0.9999999999999999.
     total = sum(parse_amount("0.10") for _ in range(10))
     assert total == parse_amount("1.00")
+
+
+def test_a_sign_outside_the_currency_mark_is_still_a_sign():
+    """HDFC's card statements write a payment as "+ ₹ 4,500.00".
+
+    Stripping currency first and sign second leaves the plus attached, the
+    amount fails to parse, and a real payment is lost from the ledger.
+    """
+    assert parse_amount("+ ₹ 4,500.00") == 450000
+    assert parse_amount("₹-500.00") == -50000
+    assert parse_amount("-₹99.00") == -9900
+    assert parse_amount("(₹1,200.00)") == -120000
+
+
+def test_two_signs_are_still_refused():
+    """Peeling greedily would turn a corrupt cell into a confident number."""
+    with pytest.raises(ValueError):
+        parse_amount("--5")
+    with pytest.raises(ValueError):
+        parse_amount("+-5")

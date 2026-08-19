@@ -106,8 +106,15 @@ class StatementParser(ABC):
         """Read the file into a Statement, or raise UnparseableStatement."""
 
 
+#: ``22/06/2026| 23:14`` -- a card statement stamps the time beside the date and
+#: the two arrive in one cell. The time is dropped rather than parsed: nothing
+#: downstream is finer-grained than a day, and a cell that fails to parse loses
+#: the whole transaction.
+_TRAILING_TIME = re.compile(r"[\s|,;]+\d{1,2}:\d{2}(?::\d{2})?\s*(?:[ap]\.?m\.?)?\s*$", re.IGNORECASE)
+
+
 def parse_date(text: str, order: DateOrder = DateOrder.DAY_FIRST) -> date:
-    cleaned = text.strip()
+    cleaned = _TRAILING_TIME.sub("", text.strip()).rstrip("|,; ")
     for fmt in formats_for(order):
         try:
             return datetime.strptime(cleaned, fmt).date()
@@ -204,6 +211,11 @@ def _runs_forwards(texts: Sequence[str], order: DateOrder) -> bool:
 #: ``(Dr)`` and ``(Cr)`` are deliberately not stripped. Those say which side of
 #: the ledger a column is, which is exactly the meaning this is allowed to
 #: discard for a currency and must never discard for a direction.
+#: ``DATE & TIME`` is the date column with a qualifier bolted on -- HDFC's card
+#: statements head it that way. A connector is required, so a column genuinely
+#: called "Time" is left alone.
+_TIME_QUALIFIER = re.compile(r"\s*(?:[&/]|and)\s*time\s*$", re.IGNORECASE)
+
 _CURRENCY_SUFFIX = re.compile(
     r"""
     \s*
@@ -225,6 +237,7 @@ def normalise_header(text: str) -> str:
     ``Balance (INR)`` and ``Balance(INR)`` reduce to the same thing.
     """
     cleaned = re.sub(r"\s+", " ", text.strip().lower()).rstrip(".:")
+    cleaned = _TIME_QUALIFIER.sub("", cleaned)
     return _CURRENCY_SUFFIX.sub("", cleaned).strip()
 
 

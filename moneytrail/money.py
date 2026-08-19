@@ -31,12 +31,35 @@ def parse_amount(text: str) -> Paise:
     raw = text
     s = text.strip().lower()
 
-    for prefix in _CURRENCY_PREFIXES:
-        if s.startswith(prefix):
-            s = s[len(prefix) :].strip()
-            break
-
     negative = False
+
+    # Sign and currency arrive in either order. HDFC's card statements mark a
+    # payment ``+ ₹ 4,500.00`` -- sign outside -- while a bank statement writes
+    # ``₹-500.00`` with the sign inside. Stripping one and then the other in a
+    # fixed order leaves whichever came first still attached, and the whole
+    # amount then fails to parse, which loses a real transaction. So both are
+    # taken off repeatedly until neither is there.
+    # At most one sign, whichever side of the currency it sits. Two signs is
+    # malformed -- "--5" is not five -- and peeling greedily would quietly turn
+    # a corrupt cell into a number, which is the failure this module exists to
+    # refuse.
+    peeling, signed = True, False
+    while peeling:
+        peeling = False
+        for prefix in _CURRENCY_PREFIXES:
+            if s.startswith(prefix):
+                s = s[len(prefix) :].strip()
+                peeling = True
+                break
+        if not signed:
+            if s.startswith("-"):
+                negative = not negative
+                s = s[1:].strip()
+                signed = peeling = True
+            elif s.startswith("+"):
+                s = s[1:].strip()
+                signed = peeling = True
+
     if s.endswith("cr"):
         s = s[:-2].strip()
     elif s.endswith("dr"):
@@ -46,14 +69,13 @@ def parse_amount(text: str) -> Paise:
         negative = True
 
     if s.startswith("(") and s.endswith(")"):
+        # Parentheses can wrap a currency mark of their own: "(₹1,200.00)".
         negative = not negative
         s = s[1:-1].strip()
-
-    if s.startswith("-"):
-        negative = not negative
-        s = s[1:].strip()
-    elif s.startswith("+"):
-        s = s[1:].strip()
+        for prefix in _CURRENCY_PREFIXES:
+            if s.startswith(prefix):
+                s = s[len(prefix) :].strip()
+                break
 
     s = s.replace(",", "").replace(" ", "")
     if not _DIGITS.fullmatch(s):

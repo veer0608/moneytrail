@@ -99,6 +99,26 @@ class Column:
     right: float
 
 
+#: Indian banks embed a rupee font and map the symbol onto an ASCII codepoint,
+#: so ``₹1,234.00`` extracts as ``C 1,234.00`` -- HDFC's card statements use
+#: ITFRupee, where the glyph drawn at ``C`` is the rupee sign. Read as text the
+#: letter is genuinely a ``C``; only the font says otherwise, so the font is
+#: what this trusts. Guessing from the letter instead would mean treating a
+#: bare "C" before digits as currency everywhere, and a reference number like
+#: ``C123456`` would quietly become an amount.
+RUPEE_FONTS = ("rupee",)
+
+
+def read_words(page) -> list[dict]:
+    """A page's words, with rupee-font glyphs restored to ``₹``."""
+    words = page.extract_words(extra_attrs=["fontname"])
+    for word in words:
+        font = (word.get("fontname") or "").lower()
+        if any(marker in font for marker in RUPEE_FONTS):
+            word["text"] = "₹"
+    return words
+
+
 def cluster_lines(words: Sequence[dict]) -> list[list[dict]]:
     """Group words into visual lines, each sorted left to right."""
     lines: list[list[dict]] = []
@@ -339,7 +359,7 @@ def recover(
     grid: list[RawRow] = []
 
     for number, page in enumerate(document.pages, start=1):
-        lines = cluster_lines(page.extract_words())
+        lines = cluster_lines(read_words(page))
         header_at = None
         for index, line in enumerate(lines):
             found = read_header(line)
