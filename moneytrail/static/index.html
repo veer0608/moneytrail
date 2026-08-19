@@ -122,7 +122,7 @@
 
   <div id="drop" tabindex="0" role="button" aria-label="Choose statement files">
     <p><strong>Drop statements here</strong>, or click to choose</p>
-    <p class="hint">PDF, CSV, XLS or XLSX · up to 25 files</p>
+    <p class="hint" id="drop-hint">PDF, CSV, XLS or XLSX</p>
     <input id="files" type="file" multiple hidden
            accept=".pdf,.csv,.tsv,.txt,.xls,.xlsx">
   </div>
@@ -137,6 +137,13 @@
     <label class="inline" for="password">PDF password</label>
     <input id="password" type="password" placeholder="only if locked" autocomplete="off">
     <button id="go" disabled>Reconcile</button>
+  </div>
+
+  <div class="controls" id="licence-row" hidden>
+    <label class="inline" for="licence">Licence key</label>
+    <input id="licence" type="text" placeholder="paste to unlock batches"
+           autocomplete="off" spellcheck="false" size="34">
+    <span class="inline" id="licence-note"></span>
   </div>
 
   <div id="out" aria-live="polite"></div>
@@ -187,6 +194,57 @@
 
   const escape = s => String(s).replace(/[&<>"']/g,
     c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  // The key lives in this browser and nowhere else. It is a bearer token for
+  // batch conversion, not an identity: losing it costs a re-paste from the
+  // Gumroad receipt, and there is no account for it to unlock.
+  const licence = document.getElementById("licence");
+  const licenceRow = document.getElementById("licence-row");
+  const licenceNote = document.getElementById("licence-note");
+  let pricing = { selling: false, free_files: 1, paid_files: 25, buy_url: "" };
+
+  try { licence.value = localStorage.getItem("moneytrail.licence") || ""; } catch (e) {}
+  licence.addEventListener("change", () => {
+    try { localStorage.setItem("moneytrail.licence", licence.value.trim()); } catch (e) {}
+  });
+
+  function buyLink(url, text) {
+    // Built as a node rather than interpolated: the URL comes from the server's
+    // environment, and concatenating it into innerHTML would be an injection
+    // waiting for a careless deploy.
+    const a = document.createElement("a");
+    a.href = url;
+    a.textContent = text;
+    a.rel = "noopener";
+    a.target = "_blank";
+    return a;
+  }
+
+  function sayLicence(state, text) {
+    licenceNote.textContent = text || "";
+    licenceNote.style.color = state === "bad" ? "var(--bad)"
+      : state === "good" ? "var(--ok)" : "var(--muted)";
+  }
+
+  // A self-hosted instance sells nothing, so it must not advertise a purchase
+  // its operator is not making. The page asks rather than assuming.
+  fetch("/api/pricing").then(r => r.json()).then(p => {
+    pricing = p;
+    const hint = document.getElementById("drop-hint");
+    if (!p.selling) {
+      // Self-hosted: no tiers to explain, so the hint states the real ceiling.
+      hint.textContent = `PDF, CSV, XLS or XLSX · up to ${p.paid_files} files`;
+      return;
+    }
+    // Never advertise a batch the visitor cannot actually run. Saying "up to
+    // 25" and then refusing the second file reads as a bug, not a price.
+    const held = (localStorage.getItem("moneytrail.licence") || "").trim();
+    hint.textContent = held
+      ? `PDF, CSV, XLS or XLSX · up to ${p.paid_files} files`
+      : `PDF, CSV, XLS or XLSX · ${p.free_files} at a time without a key`;
+    licenceRow.hidden = false;
+    sayLicence("", `${p.free_files} statement at a time free · a key raises it to ${p.paid_files}`);
+  }).catch(() => {});
 
   const VERDICT = { ok: "RECONCILED", weak: "RECONCILED*", failed: "NOT RECONCILED" };
 
@@ -274,6 +332,7 @@
     chosen.forEach(f => body.append("files", f));
     body.append("fmt", document.getElementById("fmt").value);
     body.append("password", document.getElementById("password").value);
+    body.append("licence", licence.value.trim());
 
     go.disabled = true;
     out.innerHTML = `<div class="banner weak">Reading and reconciling…</div>`;
@@ -282,8 +341,19 @@
       const result = await response.json();
       if (result.error) {
         out.innerHTML = `<div class="banner failed">${escape(result.error)}</div>`;
+        if (result.licence_problem) sayLicence("bad", result.licence_problem);
+        if (result.needs_licence && result.buy_url) {
+          const p = document.createElement("p");
+          p.style.marginTop = "1rem";
+          p.appendChild(buyLink(result.buy_url, "Get a licence key →"));
+          out.appendChild(p);
+        }
       } else {
         render(result);
+        if (result.licence) {
+          if (result.licence.problem) sayLicence("bad", result.licence.problem);
+          else if (result.licence.licensed) sayLicence("good", "key accepted");
+        }
       }
     } catch (error) {
       out.innerHTML = `<div class="banner failed">Could not reach the server` +

@@ -8,7 +8,7 @@ reconciliation comes before categorisation; this file is how to work in it.
 - `moneytrail/` — the package (`cli.py`, `llm.py`, `export.py`, parsers, reconciliation)
 - `moneytrail/web.py` — the hosted front-end's core, framework-free; `api.py` is
   the FastAPI layer and `static/index.html` the single page
-- `tests/` — 399 tests, run from the repo root
+- `tests/` — 425 tests, run from the repo root
 - `evals/` — `runner.py` and `questions.yaml` (the golden set), plus saved run JSON
 - `statements/` — sample inputs
 - `scripts/` — fixture builders
@@ -20,7 +20,7 @@ Run from the repo root. Python 3.11.
 
 ```bash
 pip install -e ".[dev]"     # pytest + pdfplumber + openpyxl + reportlab + pyyaml
-python -m pytest -q         # 399 tests
+python -m pytest -q         # 425 tests
 moneytrail --help           # console script, defined in pyproject.toml
 python -m moneytrail.api    # the hosted front-end on :8000, needs the web extra
 ```
@@ -57,6 +57,14 @@ this project reads well.
   sentence is the reason anyone would trust it over a converter that keeps files.
 - **The deterministic path is gated at 100%.** CI holds the regex parser at 100% on
   the questions it was built for, and never gates on a model.
+- **The certificate is never paywalled, and the gate never touches the CLI.**
+  `licence.py` charges for volume -- one statement at a time free, batches with a
+  key -- because the certificate is the whole argument for the product and a free
+  tier without it is one more silent converter. With no `MONEYTRAIL_GUMROAD_PRODUCT_ID`
+  set, everything is unlocked: self-hosting this repo must never meet a paywall.
+  Gumroad answers `success: true` for a refunded purchase, so `read_gumroad` checks
+  the refund, dispute, chargeback and subscription fields separately; treating
+  success as "has paid" is the most expensive bug available in that file.
 - **An unverifiable parse is not a pass.** A card statement that prints no totals
   has no discrepancies precisely because nothing could be compared. `export.py`
   requires at least one check to have *run* before it stamps `RECONCILED`, and

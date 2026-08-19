@@ -350,6 +350,40 @@ that touches FastAPI. The page is a single HTML file with no build step, no CDN
 and no analytics — the same test the offline report has, asserting the served
 page contains no `http://`, no `src=` and no `@import`.
 
+### Paying for it
+
+The hosted service charges for volume: one statement at a time free, batches
+with a licence key. The certificate is never behind the paywall — it is the
+entire argument for the product, and a free tier without it would be one more
+silent converter with nothing to come back for. What a firm pays to stop doing
+is reconciling a dozen clients one file at a time.
+
+Licence keys rather than accounts, and that is a design constraint rather than
+a shortcut. Accounts need a database, a session, a password reset and somewhere
+to keep an email address — and the sentence this product rests on is that there
+is no database and nothing is kept between requests. A paid tier built on
+storage would sell the reason anyone trusts it in order to charge for it. A key
+is a bearer token for batch conversion, it lives in your browser, and there is
+no account for it to unlock.
+
+```bash
+MONEYTRAIL_GUMROAD_PRODUCT_ID   # set it to turn the gate on
+MONEYTRAIL_BUY_URL              # where the page sends someone who needs a key
+```
+
+**With no product id set, everything is unlocked.** The CLI, a local run and
+anyone self-hosting this repo never meet a paywall — the gate exists on the
+hosted instance and nowhere else.
+
+Two details worth keeping, both of which cost money when they are wrong. Gumroad
+answers `success: true` for a purchase that was later refunded, so the refund,
+dispute, chargeback and subscription fields are checked separately; reading
+success as "has paid" would leave anyone who took their money back with
+permanent access. And a payment processor's outage must not lock out someone who
+paid, so a key that verified recently keeps working from cache for a day, while
+a key never seen before is told to *try again* — a different sentence from
+*that key is not valid*, and one that has to stay different.
+
 ### The trust strip
 
 ```bash

@@ -22,6 +22,7 @@ import os
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 
+from .licence import Licences, buy_url, from_environment
 from .web import (
     MAX_BODY_BYTES,
     MAX_FILE_BYTES,
@@ -37,8 +38,11 @@ from .web import (
 UPLOADS_PER_MINUTE = 12
 
 
-def create_app(limit: RateLimit | None = None) -> FastAPI:
+def create_app(
+    limit: RateLimit | None = None, licences: Licences | None = None
+) -> FastAPI:
     budget = limit or RateLimit(UPLOADS_PER_MINUTE, 60.0)
+    gate = licences or from_environment(paid_files=MAX_FILES)
     app = FastAPI(
         title="moneytrail",
         description="Bank statements to a ledger that proves it is all of it.",
@@ -66,6 +70,23 @@ def create_app(limit: RateLimit | None = None) -> FastAPI:
     def health():
         return {"ok": True}
 
+    @app.get("/api/pricing")
+    def pricing():
+        """What the page needs to describe the tiers, without hardcoding them.
+
+        The front-end asks rather than assuming, so a self-hosted instance with
+        no product configured renders no paywall at all instead of advertising
+        a purchase the operator is not selling.
+        """
+        from .licence import FREE_FILES
+
+        return {
+            "selling": gate.selling,
+            "free_files": FREE_FILES,
+            "paid_files": gate.paid_files,
+            "buy_url": buy_url(),
+        }
+
     @app.get("/")
     def index():
         return FileResponse(STATIC / "index.html", media_type="text/html")
@@ -76,6 +97,7 @@ def create_app(limit: RateLimit | None = None) -> FastAPI:
         files: list[UploadFile] = File(...),
         password: str = Form(""),
         fmt: str = Form("xlsx"),
+        licence: str = Form(""),
     ):
         who = client_key(
             request.headers.get("x-forwarded-for"),
@@ -96,10 +118,24 @@ def create_app(limit: RateLimit | None = None) -> FastAPI:
                 {"error": "that request is too large"}, status_code=413
             )
 
-        if len(files) > MAX_FILES:
+        entitlement = gate.entitlement(licence)
+        if len(files) > entitlement.files:
+            # 402 rather than 413: the request is not too big, it is unpaid.
+            # The page needs to tell those apart to show the right thing.
             return JSONResponse(
-                {"error": f"too many files at once -- the limit is {MAX_FILES}"},
-                status_code=413,
+                {
+                    "error": (
+                        f"that is {len(files)} statements, and this key covers "
+                        f"{entitlement.files} at a time"
+                        if entitlement.licensed
+                        else f"one statement at a time without a key -- "
+                        f"a key raises that to {gate.paid_files}"
+                    ),
+                    "needs_licence": not entitlement.licensed,
+                    "licence_problem": entitlement.problem,
+                    "buy_url": buy_url(),
+                },
+                status_code=402 if not entitlement.licensed else 413,
             )
 
         uploads = []
@@ -116,7 +152,17 @@ def create_app(limit: RateLimit | None = None) -> FastAPI:
 
         # 422 when nothing could be read at all: the request was well-formed
         # and the files were not, and the page needs to tell those apart.
-        return JSONResponse(result.as_json(), status_code=200 if result.total else 422)
+        payload = result.as_json()
+        payload["licence"] = {
+            "licensed": entitlement.licensed,
+            # A key that was offered and refused must say so even on a request
+            # that otherwise succeeded -- a lapsed subscription silently
+            # falling back to the free tier is how someone keeps paying for
+            # nothing, or stops paying without noticing.
+            "problem": entitlement.problem,
+            "files": entitlement.files,
+        }
+        return JSONResponse(payload, status_code=200 if result.total else 422)
 
     return app
 
