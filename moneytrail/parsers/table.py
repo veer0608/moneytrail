@@ -127,18 +127,41 @@ def clean_cell(value: str | None) -> str:
     return " ".join(value.split())
 
 
+def match_column(header: str, taken: Sequence[str] = ()) -> str | None:
+    """Which column a normalised heading names, if any.
+
+    The singular is tried as well as what was written. ICICI heads its money
+    columns ``DEPOSITS`` and ``WITHDRAWALS``; every alias list here was written
+    from HDFC, which uses the singular. Enumerating both spellings of every
+    entry is the same losing game the currency suffix already lost -- so the
+    plural is folded into the singular here, once, and the tables stay short.
+
+    Only a trailing ``s`` is removed, and only when the singular is a heading
+    this already knows. ``particulars`` and ``details`` are plural aliases in
+    their own right and are matched before anything is stripped.
+    """
+    candidates = [header]
+    if len(header) > 3 and header.endswith("s") and not header.endswith("ss"):
+        candidates.append(header[:-1])
+
+    for candidate in candidates:
+        for field_name, aliases in _COLUMN_GROUPS:
+            if field_name in taken:
+                continue
+            if candidate in aliases:
+                return field_name
+    return None
+
+
 def map_columns(cells: Sequence[str]) -> dict[str, int]:
     columns: dict[str, int] = {}
     for index, cell in enumerate(cells):
         header = normalise_header(cell)
         if not header:
             continue
-        for field_name, aliases in _COLUMN_GROUPS:
-            if field_name in columns:
-                continue
-            if header in aliases:
-                columns[field_name] = index
-                break
+        field_name = match_column(header, tuple(columns))
+        if field_name is not None:
+            columns[field_name] = index
     return columns
 
 
@@ -166,11 +189,23 @@ def find_header(
 
 
 def detect_bank(preamble: Sequence[str], path: Path) -> str:
-    haystack = " ".join(preamble).lower()
-    for source in (haystack, path.stem.lower()):
-        for bank in KNOWN_BANKS:
-            if bank in source:
-                return bank.upper() if len(bank) <= 5 else bank.title()
+    """Whose statement this is, taken from the earliest name on the page.
+
+    Position decides it, not the order of ``KNOWN_BANKS``. The preamble is the
+    whole first page, transaction narrations included, and Indian UPI strings
+    name the counterparty's bank constantly -- ``Payment By/HDFC BANK`` on an
+    ICICI statement made this report HDFC purely because HDFC sits earlier in
+    the list. A statement names itself at the top; a narration cannot get there.
+
+    On a tie the longer name wins, so "state bank of india" is not read as the
+    "sbi" sitting inside it.
+    """
+    for source in (" ".join(preamble).lower(), path.stem.lower()):
+        found = [(source.find(bank), -len(bank), bank) for bank in KNOWN_BANKS]
+        hits = sorted(hit for hit in found if hit[0] >= 0)
+        if hits:
+            bank = hits[0][2]
+            return bank.upper() if len(bank) <= 5 else bank.title()
     return "unknown"
 
 

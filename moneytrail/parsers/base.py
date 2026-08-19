@@ -115,7 +115,8 @@ _CURRENCY_SUFFIX = re.compile(
     r"""
     \s*
     (?:
-        [(\[] \s* (?: inr | rs\.? | ₹ | usd | \$ ) \s* [)\]]   # (INR), [Rs.], (₹)
+        # (INR), [Rs.], (₹), and the "(in Rs)" ICICI heads its card column with
+        [(\[] \s* (?: in \s+ )? (?: inr | rs\.? | ₹ | usd | \$ ) \s* [)\]]
       | \s in \s (?: inr | rs\.? | ₹ )                          # ... in INR
     )
     \s*$

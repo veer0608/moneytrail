@@ -111,9 +111,11 @@ python -m pytest
 
 - **CSV / TSV / delimited-text** net-banking exports.
 - **PDF**, including the password-protected ones banks email you. Ruled tables
-  are recovered from the borders; borderless layouts fall back to clustering
-  text by position. Scanned PDFs are rejected rather than guessed at — they
-  need OCR first.
+  are recovered from their borders; borderless ones — which is most real
+  statements — have their columns recovered from where the words sit under the
+  header, wrapped narrations and all. Scanned PDFs are rejected rather than
+  guessed at, and so is a text layer carrying no column information: see
+  [Reading a PDF that draws no table](#reading-a-pdf-that-draws-no-table).
 - **Spreadsheets**, including the very common case of an OOXML workbook shipped
   under an `.xls` name. Magic bytes decide the format, never the extension.
 - **Credit-card statements**, detected from content rather than filename.
@@ -263,37 +265,48 @@ Card repayments and inter-account transfers turned out to be the same
 operation — find the credit on another document that this debit produced — so
 they share one matcher rather than two that can drift apart.
 
-### What PDF support actually means
+### Reading a PDF that draws no table
 
-Worth stating plainly, because "reads bank statement PDFs" is the claim every
-converter makes and this one is narrower than it sounds.
+Most converters recover a table from its **ruling** — the lines a document
+draws around its cells — because that is the easy case and pdfplumber does it
+for free. Most real bank statements draw no ruling at all. Three third-party
+sample PDFs, two ICICI and one HDFC from separate projects, report **zero
+lines, zero rects and zero edges** between them, and `extract_table()` returns
+`None` on all three. Before `words.py`, every PDF this project had parsed
+successfully was one it generated itself, in the single easiest layout there
+is, and the test suite had been agreeing with itself.
 
-The PDF path recovers a table from its **ruling** — the lines a document draws
-around its cells. That works, and the committed ruled fixture proves it. The
-problem is that the fixture is ruled because reportlab drew the borders, and
-real bank statements frequently draw none. Three third-party sample PDFs — two
-ICICI, one HDFC, from separate projects — report **zero lines, zero rects and
-zero edges** between them, and `extract_table()` returns `None` on all three.
-So every PDF this project had parsed successfully was one it generated itself,
-in the single easiest layout there is.
+`words.py` recovers the columns from where the words sit. The header names them
+at known positions, so: cluster words into lines by vertical position, find the
+line that names the columns, take the boundaries from the gaps between those
+names, and drop every later word into the column its centre falls in. Amounts
+are right-aligned under left-aligned headings, which is why a boundary sits
+midway between one heading and the next rather than at either edge — and why
+**direction comes from geometry**. On a real HDFC statement nothing but x
+position says that `100.00` is a withdrawal and `2,000.00` is a deposit.
 
-Two fixtures now pin that, and they fail differently on purpose.
+The hard part is that **a row is not a line**. Banks wrap a long narration over
+several lines and put the date and the amounts on whichever of them they like.
+Real HDFC statements print the date on the first line and the money on the
+second. Real ICICI statements centre the dated line inside the narration, so
+the text arrives above *and* below the figures. A row therefore starts at a
+line carrying a date and absorbs the lines after it, filling any cell it does
+not already have.
 
-`hdfc_april_2025_unruled.pdf` is the ruled fixture with the grid removed and
-nothing else changed. It still parses — but the running-balance column does
-not survive, so the chain check stops running and the statement **still reports
-RECONCILED on half the evidence**. That is the quieter failure and the more
-dangerous one.
+Two numbers worth keeping. On a real HDFC header the word spaces measure 1.8pt
+and the narrowest column gap 12.7pt — so the threshold separating "space inside
+a heading" from "column boundary" is derived per line rather than fixed, because
+a constant that works on 10pt type does not work on 7pt, and the fixed 12.0 it
+replaced sat 0.7pt away from merging two money columns and losing a whole side
+of the ledger.
 
-`icici_july_2026_wrapped.pdf` is the blocker, and reproduces the real ICICI
-layout: the narration wraps onto lines *above and below* the line carrying the
-date and the amounts. A row is no longer a line, and no column-splitting
-threshold fixes that. Rows have to be assembled by finding the dated line and
-absorbing its neighbours. It is a strict `xfail`, so whoever fixes it will be
-told to delete the marker.
-
-CSV, XLS and XLSX exports — the kind net banking hands you — are the solid
-path, and are proven against real HDFC and ICICI files.
+What this does not do: statements whose text layer carries no column
+information at all. One of the three samples turned out to have been generated
+by flowing words left to right, so its amounts sit under the wrong headings in
+the file itself. No geometric method can read that, because the geometry is not
+there — and guessing would produce a ledger that reconciles against a wrong
+total, which is the one outcome this project exists to prevent. It is rejected
+instead.
 
 ### Getting it back out
 

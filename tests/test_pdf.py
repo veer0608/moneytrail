@@ -107,22 +107,23 @@ def test_a_pdf_with_no_table_is_rejected_rather_than_guessed_at(tmp_path):
 # --- PDFs this project did not draw itself ----------------------------------
 
 
-def test_an_unruled_pdf_loses_the_chain_check(unruled_pdf_path):
-    """The quiet failure, and the more dangerous of the two.
+def test_an_unruled_pdf_keeps_every_column(unruled_pdf_path):
+    """Removing the ruling must cost nothing at all.
 
-    Strip the ruling and the transactions are still found -- but the
-    running-balance column is not, so the chain check silently stops running
-    and the statement still reports RECONCILED on half the evidence. Every real
-    bank PDF looked at so far is unruled, so this is the normal case, not the
-    exotic one.
+    It used to cost the running-balance column, which silently stopped the
+    chain check and left the statement reporting RECONCILED on half the
+    evidence -- the quiet failure, and the more dangerous of the two. Recovering
+    columns from word positions gets it back, so an unruled statement is now
+    checked exactly as hard as a ruled one. Every real bank PDF looked at so
+    far is unruled, so this is the normal case, not the exotic one.
     """
     statement = parse_statement(unruled_pdf_path)
     result = reconcile(statement)
 
     assert len(statement.transactions) == 7
     assert result.ok
-    assert statement.rows_with_balance == 0
-    assert not result.chain_checked  # the fault localiser is gone
+    assert statement.rows_with_balance == 7
+    assert result.chain_checked
 
 
 def test_a_ruled_pdf_keeps_it(pdf_path):
@@ -133,31 +134,54 @@ def test_a_ruled_pdf_keeps_it(pdf_path):
     assert reconcile(statement).chain_checked
 
 
-@pytest.mark.xfail(
-    reason=(
-        "narrations wrapping above and below the dated line mean a row is not "
-        "a line, which column-splitting cannot fix at any threshold. Rows have "
-        "to be assembled by finding the dated line and absorbing its "
-        "neighbours. This is the real ICICI layout and the blocker for PDFs."
-    ),
-    strict=True,
-)
 def test_a_wrapped_narration_pdf_parses(wrapped_pdf_path):
+    """A row is not a line, and this is the layout that proves it.
+
+    The real ICICI shape: narration printed above *and* below the line
+    carrying the date and the amounts. Rows are assembled by finding the dated
+    line and absorbing its neighbours, so the figures come from the line and
+    the column they were printed in.
+    """
     statement = parse_statement(wrapped_pdf_path)
+    result = reconcile(statement)
 
     assert len(statement.transactions) == 3
-    assert reconcile(statement).ok
+    assert result.ok
+    assert result.chain_checked
+    # Direction comes from which column the amount landed in, which is the
+    # whole reason for recovering geometry rather than splitting whitespace.
+    assert result.credits == 125000_00
+    assert result.debits == 1951_00
 
 
-def test_the_failure_says_which_failure_it_was(wrapped_pdf_path):
+def test_the_bank_is_the_one_naming_itself_not_one_a_narration_mentions(
+    wrapped_pdf_path,
+):
+    """This statement's narrations mention HDFC twice, in UPI strings.
+
+    Indian UPI narrations name the counterparty's bank constantly, and the
+    preamble is the whole first page. A statement names itself at the top; a
+    narration cannot get there.
+    """
+    assert parse_statement(wrapped_pdf_path).bank == "ICICI"
+
+
+def test_the_failure_says_which_failure_it_was(tmp_path):
     """A page with text on it was read fine; recognising a table is what failed.
 
     Blaming OCR sends someone off to scan-convert a document that was never
     scanned, which is a long way to walk for no reason.
     """
+    from reportlab.pdfgen.canvas import Canvas
+
+    target = tmp_path / "letter.pdf"
+    canvas = Canvas(str(target))
+    canvas.drawString(72, 720, "Dear customer, thank you for banking with us.")
+    canvas.save()
+
     with pytest.raises(UnparseableStatement) as caught:
-        parse_statement(wrapped_pdf_path)
+        parse_statement(target)
 
     message = str(caught.value)
-    assert "no ruling lines" in message
+    assert "no transaction table was recognised" in message
     assert "OCR" not in message

@@ -6,9 +6,10 @@ reconciliation comes before categorisation; this file is how to work in it.
 ## Layout
 
 - `moneytrail/` — the package (`cli.py`, `llm.py`, `export.py`, parsers, reconciliation)
+- `moneytrail/parsers/words.py` — grid recovery for PDFs that draw no table
 - `moneytrail/web.py` — the hosted front-end's core, framework-free; `api.py` is
   the FastAPI layer and `static/index.html` the single page
-- `tests/` — 443 tests + 1 strict xfail, run from the repo root
+- `tests/` — 460 tests, run from the repo root
 - `evals/` — `runner.py` and `questions.yaml` (the golden set), plus saved run JSON
 - `statements/` — sample inputs
 - `scripts/` — fixture builders
@@ -20,7 +21,7 @@ Run from the repo root. Python 3.11.
 
 ```bash
 pip install -e ".[dev]"     # pytest + pdfplumber + openpyxl + reportlab + pyyaml
-python -m pytest -q         # 443 tests, 1 xfailed
+python -m pytest -q         # 460 tests
 moneytrail --help           # console script, defined in pyproject.toml
 python -m moneytrail.api    # the hosted front-end on :8000, needs the web extra
 ```
@@ -57,17 +58,23 @@ this project reads well.
   sentence is the reason anyone would trust it over a converter that keeps files.
 - **The deterministic path is gated at 100%.** CI holds the regex parser at 100% on
   the questions it was built for, and never gates on a model.
-- **PDF support is narrower than it looks, and the gap is pinned.** The PDF path
-  recovers a *ruled* table; every real bank PDF examined so far (two ICICI, one
-  HDFC, from separate third-party projects) draws no ruling at all — zero lines,
-  zero rects, `extract_table()` returns None. `hdfc_april_2025_unruled.pdf` shows
-  the quiet half: transactions are still found but the running-balance column is
-  not, so the chain check silently stops and the statement still says RECONCILED
-  on half the evidence. `icici_july_2026_wrapped.pdf` shows the blocker, as a
-  strict xfail: narrations wrap above *and below* the dated line, so a row is not
-  a line and no column-splitting threshold fixes it. Fixing it means assembling
-  rows from word positions by finding the dated line and absorbing its
-  neighbours. Do not claim PDF support without saying which half.
+- **The PDF passes run most-informed first, and the order is load-bearing.**
+  Ruling, then `words.py`, then pdfplumber's whitespace clustering. That last one
+  finds a header often enough to *look* like it worked while splitting "HDFC BANK"
+  across two columns and losing the running-balance column — which costs the chain
+  check and leaves the statement reporting RECONCILED on half the evidence.
+  Succeeding worse is not succeeding sooner. Do not move it earlier.
+- **In `words.py`, a row is not a line.** Banks wrap narrations over several lines
+  and put the date and the amounts on whichever they like — HDFC prints the date
+  first and the money on the next line; ICICI centres the dated line inside the
+  narration, so text arrives above *and* below the figures. A row starts at a
+  dated line and absorbs its neighbours. Narration printed above a dated line
+  attaches to the transaction before it: that misplaces words, never money, and
+  the reconciliation gate catches it if that is ever untrue.
+- **Thresholds in `words.py` are measured, not assumed.** Word spaces and column
+  gaps are two populations that are obvious within a line and not comparable
+  between them. On a real HDFC header they are 1.8pt and 12.7pt; a fixed 12.0 sat
+  0.7pt from merging two money columns and losing a side of the ledger.
 - **Three checks, not two.** Where a bank prints its own column totals (Axis
   labels the row `TRANSACTION TOTAL`) they are parsed into `stated_debits` /
   `stated_credits` and compared. This is not redundant with the other two: when

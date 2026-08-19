@@ -1,10 +1,23 @@
 """PDF statements -- the format Indian banks actually email you.
 
-Two extraction passes. Most bank statements draw the table, so ruling lines
-recover the grid exactly; the ones that do not get a second pass that clusters
-text by position. If neither finds a header the file is rejected rather than
-guessed at, because a half-recovered table would reconcile against a wrong
-total and that is the one outcome this project exists to prevent.
+Three extraction passes, in order of how much they know rather than how hard
+they try.
+
+Ruling first: where a bank draws its table, the lines state the geometry
+exactly and nothing inferred should be allowed to override that. Then
+`words.py`, which recovers the columns from where the header's own words sit --
+the common case, because most real statements draw nothing. Whitespace
+clustering last, for anything whose header the word pass could not name.
+
+That order is load-bearing. pdfplumber's whitespace strategy finds a header
+often enough to look like it worked, while splitting "HDFC BANK" across two
+columns and losing the running-balance column entirely -- which costs the chain
+check and leaves the statement reporting RECONCILED on half the evidence.
+Succeeding worse is not succeeding sooner.
+
+If none of the three finds a header the file is rejected rather than guessed
+at, because a half-recovered table would reconcile against a wrong total, and
+that is the one outcome this project exists to prevent.
 """
 
 from __future__ import annotations
@@ -15,10 +28,12 @@ from ..models import CardStatement, Statement
 from .base import PasswordRequired, StatementParser, UnparseableStatement
 from .build import build
 from .table import RawRow, clean_cell, find_header, is_header
+from .words import recover
 
 #: Ruled tables first -- exact when the bank draws borders.
 LINE_SETTINGS = {"vertical_strategy": "lines", "horizontal_strategy": "lines"}
-#: Fallback for borderless layouts: cluster on whitespace instead.
+#: Last resort. Splits on whitespace, which mangles more than it recovers --
+#: see the ordering note above for why it runs after the word pass.
 TEXT_SETTINGS = {
     "vertical_strategy": "text",
     "horizontal_strategy": "text",
@@ -51,16 +66,52 @@ class PdfStatementParser(StatementParser):
 
         with document:
             preamble = (document.pages[0].extract_text() or "").splitlines()
-            for settings in (LINE_SETTINGS, TEXT_SETTINGS):
-                rows = _extract_rows(document, settings)
-                found = find_header([row.cells for row in rows])
-                if found is None:
-                    continue
+            # Ruling first: a drawn table states its own geometry, and nothing
+            # inferred should be allowed to override that.
+            rows = _extract_rows(document, LINE_SETTINGS)
+            found = find_header([row.cells for row in rows])
+            if found is not None:
                 header_index, columns = found
                 return build(
                     source=path,
                     columns=columns,
                     # The header repeats on every page of a multi-page table.
+                    rows=[
+                        row
+                        for row in rows[header_index + 1 :]
+                        if is_header(row.cells) is None
+                    ],
+                    grid=rows,
+                    preamble=preamble,
+                )
+
+            # Then word positions, which read the header's own geometry.
+            # Ahead of the whitespace strategy deliberately: that one finds a
+            # header often enough to look like it worked, while splitting
+            # "HDFC BANK" across two columns and dropping the running-balance
+            # column entirely -- which costs the chain check and leaves the
+            # statement reporting RECONCILED on half the evidence. Succeeding
+            # worse is not succeeding sooner.
+            recovered = recover(document)
+            if recovered is not None:
+                rows, grid, columns = recovered
+                return build(
+                    source=path,
+                    columns=columns,
+                    rows=rows,
+                    grid=grid,
+                    preamble=preamble,
+                )
+
+            # Last: pdfplumber's whitespace clustering, for anything whose
+            # header the word pass could not name.
+            rows = _extract_rows(document, TEXT_SETTINGS)
+            found = find_header([row.cells for row in rows])
+            if found is not None:
+                header_index, columns = found
+                return build(
+                    source=path,
+                    columns=columns,
                     rows=[
                         row
                         for row in rows[header_index + 1 :]
@@ -76,9 +127,9 @@ class PdfStatementParser(StatementParser):
         if any(line.strip() for line in preamble):
             raise UnparseableStatement(
                 f"{path}: the text was read, but no transaction table was "
-                f"recognised in it. Statements that draw no ruling lines around "
-                f"their table are the usual cause -- the columns then have to be "
-                f"recovered from where the words sit, which this does not yet do."
+                f"recognised in it -- no header naming a date column and a "
+                f"balance or a debit/credit pair. If this is a statement, the "
+                f"header is worded in a way the parser does not know yet."
             )
         raise UnparseableStatement(
             f"{path}: no text at all on the first page, so there is nothing to "
