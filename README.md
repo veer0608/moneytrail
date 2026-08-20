@@ -16,8 +16,8 @@ Local-first: statements are parsed on your machine and never leave it.
 ## The idea
 
 Every personal-finance tool starts by categorising transactions. That is the
-wrong first step. If the parse dropped a row — a wrapped narration, a page
-break, a misread decimal — then every category total, every "you spent 23% more
+wrong first step. If the parse dropped a row (a wrapped narration, a page
+break, a misread decimal) then every category total, every "you spent 23% more
 on food" insight, and every answer built on top of it is quietly wrong, and
 nothing in the product will ever tell you.
 
@@ -26,8 +26,8 @@ gate**, and it is checked against arithmetic the bank already published:
 
 | check | what it proves |
 |---|---|
-| `chain` | walking the running-balance column, every row moves the balance by exactly its own amount — localises a fault to a line number |
-| `totals` | `opening + credits − debits == closing` — catches faults the chain cannot see, including rows lost off the end |
+| `chain` | walking the running-balance column, every row moves the balance by exactly its own amount; this localises a fault to a line number |
+| `totals` | `opening + credits − debits == closing`; catches faults the chain cannot see, including rows lost off the end |
 
 This is free ground truth. No labelling, no judgement, no model. A statement
 either reconciles to the paisa or it does not, and if it does not, the tool says
@@ -35,7 +35,7 @@ which row and by how much.
 
 **Money is an integer count of paise, everywhere.** `0.1 + 0.2 != 0.3` in
 binary. A float pipeline cannot promise "to the paisa", so there are no floats
-in this codebase — amounts are only rendered as rupees at the edge.
+in this codebase, amounts are only rendered as rupees at the edge.
 
 ## It works
 
@@ -111,8 +111,8 @@ python -m pytest
 
 - **CSV / TSV / delimited-text** net-banking exports.
 - **PDF**, including the password-protected ones banks email you. Ruled tables
-  are recovered from their borders; borderless ones — which is most real
-  statements — have their columns recovered from where the words sit under the
+  are recovered from their borders; borderless ones (which is most real
+  statements) have their columns recovered from where the words sit under the
   header, wrapped narrations and all. Scanned PDFs are rejected rather than
   guessed at, and so is a text layer carrying no column information: see
   [Reading a PDF that draws no table](#reading-a-pdf-that-draws-no-table).
@@ -128,12 +128,12 @@ does publish is a summary box, and that box is the ground truth:
 
 | check | what it proves |
 |---|---|
-| `summary` | `previous − payments + purchases + fees == total due` — the issuer's own arithmetic |
-| `rows-debit` / `rows-credit` | the transaction rows this parse recovered sum to the totals the box states — the only check that says the ledger is *complete* |
+| `summary` | `previous − payments + purchases + fees == total due`: the issuer's own arithmetic |
+| `rows-debit` / `rows-credit` | the transaction rows this parse recovered sum to the totals the box states: the only check that says the ledger is *complete* |
 
 A statement that prints no totals is reported `UNVERIFIED` rather than passing
 quietly. And the sign convention inverts: on a card, `Cr` is money coming off
-what you owe, the opposite of a bank statement's credit column — reading the
+what you owe, the opposite of a bank statement's credit column, reading the
 bank convention there would flip the entire ledger.
 
 Card transactions reuse the same `Transaction` type, so the merchant rollup
@@ -146,17 +146,17 @@ the same statement as CSV, as PDF and as a workbook, and asserts all three
 ledgers are identical.
 
 **Verified against a real bank export:** 225 transactions across three months of
-an HDFC statement reconcile to the paisa — and against the closing balance the
+an HDFC statement reconcile to the paisa, and against the closing balance the
 bank prints in its own summary block, not merely against the rows' internal
 consistency. Four defects surfaced in that first contact with real data, none
 of which the synthetic fixtures could have found: divider rows drawn in
 asterisks, amounts masked with `******`, a two-row summary block at the foot,
 and an IFSC code being mistaken for a reference number. Each is now a test.
 
-**Phase 2 — shipped.** `moneytrail merchants` rolls a ledger up by counterparty
+**Phase 2 is shipped.** `moneytrail merchants` rolls a ledger up by counterparty
 and category.
 
-- narrations are taken apart structurally — find the VPA, and the counterparty
+- narrations are taken apart structurally: find the VPA, and the counterparty
   is the segment beside it, which works across banks without per-bank patterns
 - welded merchant names are un-welded (`SWIGGYINSTAMART` → Swiggy Instamart) by
   minimum-cost segmentation over a vocabulary, all-or-nothing so a run that
@@ -182,7 +182,7 @@ showed why it was low:
 **This is not a merchant-heavy ledger.** A bigger brand lexicon would have moved
 almost nothing; the value is in transfers and card bills, which is where phases
 3 and 5 now point. Reporting one "resolved" percentage would have hidden that
-entirely, so the tool reports the classification breakdown alongside it — a
+entirely, so the tool reports the classification breakdown alongside it: a
 transfer to a friend is understood, not an unresolved merchant.
 
 The same pass found the largest single outflow filed under the wrong category:
@@ -191,8 +191,8 @@ CRED is a card-bill platform, not a fee.
 ### Where the money actually went
 
 `moneytrail spend` treats a card bill payment as what it is: one event recorded
-twice — a debit leaving the bank, and a credit reducing what the card says you
-owe. Counting both double-counts the money.
+twice, as a debit leaving the bank and as a credit reducing what the card says
+you owe. Counting both double-counts the money.
 
 ```
   bank outflow                  ₹45,900.00
@@ -204,7 +204,7 @@ owe. Counting both double-counts the money.
 
 Repayments are matched to card-side payments on an exact amount and a date
 window. **A repayment with no card statement behind it stays counted**, because
-the purchases it settled are not in front of us — removing it would understate
+the purchases it settled are not in front of us, removing it would understate
 spending, and understating is the more dangerous error. The report names those
 repayments rather than burying the assumption. Card payments with no matching
 bank debit are reported too: they were settled from an account you did not
@@ -231,7 +231,7 @@ supply.
 
 - **Cadence is measured, not assumed.** Three charges at irregular gaps are a
   habit, not a subscription, and are not reported as one. Amounts that swing
-  wildly disqualify a run too. Monthly rent qualifies — a cadence detector that
+  wildly disqualify a run too. Monthly rent qualifies: a cadence detector that
   only found streaming services would be missing the expensive half.
 - **Duplicates are candidates, not verdicts.** Buying the same coffee twice
   looks identical to being charged twice, so each one is reported with its span
@@ -256,19 +256,19 @@ credits on another and removes them from both sides:
   actually received             ₹80,000.00
 ```
 
-Matching only ever pairs *across* accounts — a debit and credit on the same
+Matching only ever pairs *across* accounts. A debit and credit on the same
 statement is a refund, not a transfer. And because paying a friend a round sum
 on the day someone pays you the same amount would look identical, both
 narrations are printed so you can see exactly what was matched to what.
 
 Card repayments and inter-account transfers turned out to be the same
-operation — find the credit on another document that this debit produced — so
-they share one matcher rather than two that can drift apart.
+operation, namely finding the credit on another document that this debit
+produced, so they share one matcher rather than two that can drift apart.
 
 ### Reading a PDF that draws no table
 
-Most converters recover a table from its **ruling** — the lines a document
-draws around its cells — because that is the easy case and pdfplumber does it
+Most converters recover a table from its **ruling** (the lines a document
+draws around its cells) because that is the easy case and pdfplumber does it
 for free. Most real bank statements draw no ruling at all. Three third-party
 sample PDFs, two ICICI and one HDFC from separate projects, report **zero
 lines, zero rects and zero edges** between them, and `extract_table()` returns
@@ -281,7 +281,7 @@ at known positions, so: cluster words into lines by vertical position, find the
 line that names the columns, take the boundaries from the gaps between those
 names, and drop every later word into the column its centre falls in. Amounts
 are right-aligned under left-aligned headings, which is why a boundary sits
-midway between one heading and the next rather than at either edge — and why
+midway between one heading and the next rather than at either edge, and why
 **direction comes from geometry**. On a real HDFC statement nothing but x
 position says that `100.00` is a withdrawal and `2,000.00` is a deposit.
 
@@ -294,7 +294,7 @@ line carrying a date and absorbs the lines after it, filling any cell it does
 not already have.
 
 Two numbers worth keeping. On a real HDFC header the word spaces measure 1.8pt
-and the narrowest column gap 12.7pt — so the threshold separating "space inside
+and the narrowest column gap 12.7pt, so the threshold separating "space inside
 a heading" from "column boundary" is derived per line rather than fixed, because
 a constant that works on 10pt type does not work on 7pt, and the fixed 12.0 it
 replaced sat 0.7pt away from merging two money columns and losing a whole side
@@ -304,7 +304,7 @@ What this does not do: statements whose text layer carries no column
 information at all. One of the three samples turned out to have been generated
 by flowing words left to right, so its amounts sit under the wrong headings in
 the file itself. No geometric method can read that, because the geometry is not
-there — and guessing would produce a ledger that reconciles against a wrong
+there, and guessing would produce a ledger that reconciles against a wrong
 total, which is the one outcome this project exists to prevent. It is rejected
 instead.
 
@@ -320,7 +320,7 @@ source PDF. `.csv` needs nothing installed; `.xlsx` needs the `xlsx` extra.
 
 The point is what travels with it. Any PDF-to-spreadsheet converter can lose a
 row to a wrapped narration or a page break, and what lands in the spreadsheet
-still looks like a spreadsheet — the person importing it has no way to tell.
+still looks like a spreadsheet. The person importing it has no way to tell.
 So the export carries a **reconciliation certificate**: per source file, the
 arithmetic that was checked, the SHA-256 of the exact bytes it was checked
 against, and whether it held.
@@ -343,7 +343,7 @@ against, and whether it held.
 The digest binds the certificate to bytes rather than to a filename: a filename
 says which file was *meant*, a digest says which bytes were actually read, and
 only the second survives being emailed around. An `.xlsx` export carries the
-certificate as a second sheet — a proof that travels separately from the thing
+certificate as a second sheet, because a proof that travels separately from the thing
 it proves gets detached on the first forward.
 
 A statement that fails to reconcile is **still exported**. Withholding the data
@@ -358,7 +358,7 @@ NOT RECONCILED -- 1 statement(s) did not add up:
     statement total: expected ₹96,819.60, statement says ₹96,170.60 (off by -₹649.00)
 ```
 
-Amounts are written as exact decimals, never floats — summing the column is the
+Amounts are written as exact decimals, never floats: summing the column is the
 first thing anyone receiving this will do, and it has to match the certificate
 printed beside it. CSV is written with a BOM so Excel on Windows opens it as
 UTF-8 rather than turning every rupee sign into mojibake.
@@ -371,13 +371,13 @@ python -m moneytrail.api        # http://127.0.0.1:8000
 ```
 
 Drop statements on the page, get the trust strip and the workbook back. It exists
-because the people who most need the certificate — accountants reconciling a
-dozen client statements a month — will not `pip install` anything, and a promise
+because the people who most need the certificate, accountants reconciling a
+dozen client statements a month, will not `pip install` anything, and a promise
 nobody can reach is worth less than a weaker one they can.
 
 So this is the one place the local-first rule bends, and the README would rather
 be exact than reassuring. The CLI's promise is absolute: nothing leaves the
-machine. A server cannot say that. What it says instead is narrower and true —
+machine. A server cannot say that. What it says instead is narrower and true:
 the uploaded bytes live inside a single request, in a temporary directory removed
 before the reply is written; there is no database, nothing is logged but the
 method and path, and no second request exists that could see them. The parsers
@@ -392,13 +392,13 @@ to serve means nothing worth keeping between them.
 
 `web.py` holds the reasoning and imports no framework; `api.py` is the only file
 that touches FastAPI. The page is a single HTML file with no build step, no CDN
-and no analytics — the same test the offline report has, asserting the served
+and no analytics, the same test the offline report has, asserting the served
 page contains no `http://`, no `src=` and no `@import`.
 
 ### The landing page
 
 The tool sits at the top of it, not behind a call to action. For this product
-the demo *is* the pitch — a click that shows a missing row being caught argues
+the demo *is* the pitch, a click that shows a missing row being caught argues
 better than any paragraph underneath it, and every step between a visitor and
 that moment costs some of them.
 
@@ -411,21 +411,21 @@ prop that passes.
 
 Price, shop link and repository link are all served by `/api/pricing` rather
 than written into the markup. A price in HTML drifts from the checkout it links
-to, and the served page is asserted to contain **no absolute URL at all** —
+to, and the served page is asserted to contain **no absolute URL at all**,
 which is what keeps "this page loads nothing from anywhere else" checkable by
 reading it instead of trusting it.
 
 ### Paying for it
 
 The hosted service charges for volume: one statement at a time free, batches
-with a licence key. The certificate is never behind the paywall — it is the
+with a licence key. The certificate is never behind the paywall: it is the
 entire argument for the product, and a free tier without it would be one more
 silent converter with nothing to come back for. What a firm pays to stop doing
 is reconciling a dozen clients one file at a time.
 
 Licence keys rather than accounts, and that is a design constraint rather than
 a shortcut. Accounts need a database, a session, a password reset and somewhere
-to keep an email address — and the sentence this product rests on is that there
+to keep an email address, and the sentence this product rests on is that there
 is no database and nothing is kept between requests. A paid tier built on
 storage would sell the reason anyone trusts it in order to charge for it. A key
 is a bearer token for batch conversion, it lives in your browser, and there is
@@ -437,7 +437,7 @@ MONEYTRAIL_BUY_URL              # where the page sends someone who needs a key
 ```
 
 **With no product id set, everything is unlocked.** The CLI, a local run and
-anyone self-hosting this repo never meet a paywall — the gate exists on the
+anyone self-hosting this repo never meet a paywall. The gate exists on the
 hosted instance and nowhere else.
 
 Two details worth keeping, both of which cost money when they are wrong. Gumroad
@@ -446,7 +446,7 @@ dispute, chargeback and subscription fields are checked separately; reading
 success as "has paid" would leave anyone who took their money back with
 permanent access. And a payment processor's outage must not lock out someone who
 paid, so a key that verified recently keeps working from cache for a day, while
-a key never seen before is told to *try again* — a different sentence from
+a key never seen before is told to *try again*, a different sentence from
 *that key is not valid*, and one that has to stay different.
 
 ### The trust strip
@@ -456,21 +456,21 @@ python -m moneytrail report statements/ --open
 ```
 
 Writes one self-contained HTML file. Deliberately a file, not a server: no
-ports, no build step, and no network of any kind — there is a test asserting the
+ports, no build step, and no network of any kind. There is a test asserting the
 page contains no `http`, no `<script>`, no `src=` and no `@import`, so the "your
 data never leaves the machine" claim is checkable by reading the output.
 
 The layout is an argument about what matters:
 
-1. **Was every statement read correctly?** One tile per statement — green if it
+1. **Was every statement read correctly?** One tile per statement, green if it
    reconciled to the paisa, amber if it reconciled only against figures taken
    from its own rows, red with the row locator and the exact delta if it failed.
    *No other finance tool tells you this*, and every number below it is
    worthless if the answer is no.
-2. **Open loops** — duplicate charges never refunded, card bills paid with no
+2. **Open loops**: duplicate charges never refunded, card bills paid with no
    card statement covering them, card payments no supplied account explains.
-3. **Recurring** — active and stopped, with the annual cost.
-4. **Where it went** — the category breakdown, last and smallest, because it is
+3. **Recurring**: active and stopped, with the annual cost.
+4. **Where it went**: the category breakdown, last and smallest, because it is
    the part every other app already has.
 
 Generated reports contain everything the statements do, so `*.html` is
@@ -496,7 +496,7 @@ confident, plausible, wrong number, and nothing in the output would show it.
 Questions are parsed into a structured query; the arithmetic is done by code;
 every answer arrives carrying the rows it came from.
 
-That also leaves the right seam for a model — let it translate English into one
+That also leaves the right seam for a model: let it translate English into one
 of these queries, and keep the engine computing the number. The model picks
 what to ask; it never gets to decide what the answer is. That seam is now
 built, and [measured](#letting-a-model-ask).
@@ -506,7 +506,7 @@ Three consequences worth pointing at:
 - **It refuses rather than answering a different question.** Ask about a
   merchant these statements have never seen and it says so. An earlier version
   silently dropped the unknown name and returned the total for *everything* that
-  month — the exact failure this project exists to prevent, caught by a test.
+  month, the exact failure this project exists to prevent, caught by a test.
 - **Relative dates resolve against the ledger, not against today.** A statement
   ending in May answers "last month" as April forever, so the same question
   cannot drift into a different answer over time.
@@ -518,7 +518,7 @@ Three consequences worth pointing at:
 
 The regex parser understands the questions it was built for and nothing else.
 A model understands the phrasing but cannot be trusted with the arithmetic. So
-the model is given one job — turn English into a query — and the engine keeps
+the model is given one job, turning English into a query, and the engine keeps
 the other:
 
 ```bash
@@ -530,7 +530,7 @@ names*, and returns JSON. That JSON is validated into the same `Query` the
 regex parser produces and executed by the same `run()`. A model that invents a
 merchant is refused by the same guard that refuses an unknown name typed by a
 person, because the engine would answer an invented merchant with a confident
-zero — and a confident zero reads exactly like *you spent nothing there*.
+zero, and a confident zero reads exactly like *you spent nothing there*.
 
 The output names which parser worked the question out. With no key configured,
 `--model` falls back to the built-in parser and says so; without the flag,
@@ -544,7 +544,7 @@ environment variable.
 ### The scorecard
 
 `evals/questions.yaml` holds 71 questions, each paired with **the query it
-should become** — never with a number. Gold answers are produced by running
+should become**, never with a number. Gold answers are produced by running
 the gold query through the engine, which is what made a golden set this size
 free to label and is why it cannot go stale: change the engine and the gold
 changes with it.
@@ -563,13 +563,13 @@ dishonest:
 |---|---|---|
 | deterministic-covered | 39 | what the regex parser was built for. CI holds it at 100% here |
 | model-only | 25 | one query expresses these; no regex parses them |
-| beyond-schema | 7 | no single query expresses these at all — refusing is the right answer |
+| beyond-schema | 7 | no single query expresses these at all; refusing is the right answer |
 
 The only lever on model quality here is the prompt, and a prompt tuned by
 reading the questions it failed, then scored on those same questions, reports
 a number fitted to its own answer key. So **40% of the set is held back**, and
 which 40% is decided by a hash of the question text rather than by anything
-editable — whoever tunes the prompt does not get to choose what they are
+editable, whoever tunes the prompt does not get to choose what they are
 marked on. The table below is the **held-out half**, 29 questions the prompt
 was never shown.
 
@@ -629,7 +629,7 @@ scores 0% on model-only by construction; the models reach 80–90%.
 | `openai/gpt-oss-120b` | $0.000291 | 1.9× |
 | `llama-3.3-70b-versatile` | $0.000657 | 4.4× |
 
-They get there differently — `llama-3.3-70b` is the best on the model-only half
+They get there differently. `llama-3.3-70b` is the best on the model-only half
 (90% query, 100% answer) and pays for it by slipping to 93.8% on the questions
 the regex parser handles perfectly, while the two `gpt-oss` models hold 100%
 there. On the whole held-out set that nets out identical. `gpt-oss-20b` is the
@@ -637,14 +637,14 @@ one to run: same accuracy, a quarter of the price of the 70B, and the fastest
 of the three at the p50.
 
 Below that, `llama-3.1-8b-instant` at a third of the price is genuinely worse
-(69% query), so the cheap end does have a floor — the finding is that the
+(69% query), so the cheap end does have a floor. The finding is that the
 ceiling arrives early, not that size never matters.
 
 **And the prompt tuning did not survive contact with the held-out half.**
 Iterating against dev failures moved the test half from 27/29 to 26/29 on
 query accuracy. One question was fixed, two broke, and the cause is traceable
 rather than statistical: a rule reading *"'how many'/'how often' are count,
-everything else is total"* — written to fix a dev question about BigBasket —
+everything else is total"*, written to fix a dev question about BigBasket,
 swallowed *"did money come back from Myntra?"*, which is a refund question,
 contradicting a rule higher up the same prompt. At n=29 one question is inside
 the noise, but the mechanism is not: it is what tuning against a visible set
@@ -652,7 +652,7 @@ looks like from the inside, and without the split it would have been published
 as an improvement.
 
 The third set exists because two of the questions this phase was designed
-around — *"compare March and April"*, *"which subscription went up in price"* —
+around: *"compare March and April"*, *"which subscription went up in price"*.
 turn out not to be expressible in the query schema at all. Scoring them against
 an invented gold query would have measured nothing, so they are scored as
 refusals, and what gets measured is whether a parser knows the limits of the
@@ -668,12 +668,12 @@ which costs money and moves on someone else's schedule.
 
 | phase | what |
 |---|---|
-| — | Grow the parser against real statements from other banks; every format so far has broken it in a new way, and none of the breaks were in the reconciliation engine |
-| — | Get it in front of one accountant. The remaining risk is contact with real files, not features |
+|, | Grow the parser against real statements from other banks; every format so far has broken it in a new way, and none of the breaks were in the reconciliation engine |
+|, | Get it in front of one accountant. The remaining risk is contact with real files, not features |
 
 ### The number to report
 
-Once it runs on real statements, the headline is not an accuracy score — it is:
+Once it runs on real statements, the headline is not an accuracy score, it is:
 
 > reconciles to the paisa on *N* of *M* statement-months across *K* banks,
 > with every failure documented.
@@ -697,7 +697,7 @@ the metric is also the bug tracker.
   branch in the parser.
 - **A half-recovered PDF table is rejected.** If none of the three extraction
   passes finds a header the file is refused, because a table missing rows would
-  still reconcile — against a wrong total. That includes a statement whose text
+  still reconcile, against a wrong total. That includes a statement whose text
   layer carries no column information at all: the geometry is not there to be
   read, and guessing at it is the failure this rule exists to prevent.
 - **Failures carry a locator.** Row number for CSV, row *and page* for PDF, so

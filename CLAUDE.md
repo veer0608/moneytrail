@@ -5,15 +5,15 @@ reconciliation comes before categorisation; this file is how to work in it.
 
 ## Layout
 
-- `moneytrail/` — the package (`cli.py`, `llm.py`, `export.py`, parsers, reconciliation)
-- `moneytrail/parsers/words.py` — grid recovery for PDFs that draw no table
-- `moneytrail/web.py` — the hosted front-end's core, framework-free; `api.py` is
+- `moneytrail/`: the package (`cli.py`, `llm.py`, `export.py`, parsers, reconciliation)
+- `moneytrail/parsers/words.py`: grid recovery for PDFs that draw no table
+- `moneytrail/web.py`: the hosted front-end's core, framework-free; `api.py` is
   the FastAPI layer and `static/index.html` the single page
-- `tests/` — 499 tests, run from the repo root
-- `evals/` — `runner.py` and `questions.yaml` (the golden set), plus saved run JSON
-- `statements/` — sample inputs
-- `scripts/` — fixture builders
-- `render.yaml` — the deploy, described by the repo rather than by dashboard clicks
+- `tests/`: 499 tests, run from the repo root
+- `evals/`: `runner.py` and `questions.yaml` (the golden set), plus saved run JSON
+- `statements/`: sample inputs
+- `scripts/`: fixture builders
+- `render.yaml`: the deploy, described by the repo rather than by dashboard clicks
 
 ## Commands
 
@@ -33,7 +33,7 @@ and `llm.py` speaks HTTP over the standard library so `ask --model` works on a b
 install. Everything else is an extra: `pdf`, `xlsx`, `formats`, `evals`, `web`, `dev`.
 
 `web.py` holds the hosted front-end's reasoning and imports no framework; `api.py`
-is the only file that imports FastAPI. Keep it that way — and note that `api.py`
+is the only file that imports FastAPI. Keep it that way, and note that `api.py`
 deliberately omits `from __future__ import annotations`, because FastAPI resolves
 handler annotations against module globals and postponed evaluation breaks it.
 
@@ -48,24 +48,24 @@ this project reads well.
   catches faults the chain cannot see, including rows lost off the end. If a parse
   silently drops a row, every total built on it is wrong and nothing else in the
   product will say so. Do not reorder this.
-- **Statements never leave the machine** — in the CLI, absolutely. No telemetry, no
+- **Statements never leave the machine** in the CLI, absolutely. No telemetry, no
   upload, no default that sends a statement anywhere. A model is only called when
   explicitly asked. The hosted front-end is the one deliberate exception and makes
   the weaker promise it can actually keep: the bytes live inside a single request,
   in a `TemporaryDirectory` removed before the response is written, and there is no
   database, no logging of content, and no second request that could see them. Do
-  not add storage, a queue, or a job id — each would break that sentence, and the
+  not add storage, a queue, or a job id: each would break that sentence, and the
   sentence is the reason anyone would trust it over a converter that keeps files.
 - **The deterministic path is gated at 100%.** CI holds the regex parser at 100% on
   the questions it was built for, and never gates on a model.
 - **The PDF passes run most-informed first, and the order is load-bearing.**
   Ruling, then `words.py`, then pdfplumber's whitespace clustering. That last one
   finds a header often enough to *look* like it worked while splitting "HDFC BANK"
-  across two columns and losing the running-balance column — which costs the chain
+  across two columns and losing the running-balance column, which costs the chain
   check and leaves the statement reporting RECONCILED on half the evidence.
   Succeeding worse is not succeeding sooner. Do not move it earlier.
 - **In `words.py`, a row is not a line.** Banks wrap narrations over several lines
-  and put the date and the amounts on whichever they like — HDFC prints the date
+  and put the date and the amounts on whichever they like. HDFC prints the date
   first and the money on the next line; ICICI centres the dated line inside the
   narration, so text arrives above *and* below the figures. A row starts at a
   dated line and absorbs its neighbours. Narration printed above a dated line
@@ -77,7 +77,7 @@ this project reads well.
   0.7pt from merging two money columns and losing a side of the ledger.
 - **Prose about balances is not a balance row.** HDFC prints "Closing balance
   includes funds earmarked for hold" under *every* page. A cross-column label
-  only marks an endpoint when the row also carries a figure — otherwise the parse
+  only marks an endpoint when the row also carries a figure. Otherwise the parse
   stops on page one and silently discards everything after it. In `words.py` the
   same rule drops it entirely rather than passing it on, because a row with no
   date and no figures is indistinguishable from a wrapped narration downstream
@@ -101,16 +101,16 @@ this project reads well.
   on the next, aligned by position alone, so splitting it by the transaction
   table's columns puts every value in the wrong cell. `words.read_labelled_values`
   pairs a label with the nearest *amount or date* beneath it whose x-extent
-  overlaps — "amount or date" because headings wrap, and "PAYMENTS/CREDITS"
+  overlaps, with "amount or date" mattering because headings wrap, and "PAYMENTS/CREDITS"
   continues as "RECEIVED" on the line below.
 - **The rounding tolerance is on the summary check only.** Issuers round the
   total they bill: HDFC computes ₹19,375.19 and charges ₹19,375.00. That check
   compares the issuer's own published figures to each other and says nothing
   about completeness, so a sub-rupee gap is reported as a note. The row checks
-  stay exact to the paisa — they are the completeness proof, and a tolerance
+  stay exact to the paisa: they are the completeness proof, and a tolerance
   there would let a missing transaction hide inside it.
 - **The rupee sign arrives as the letter C.** Indian banks embed a rupee font and
-  map the symbol onto an ASCII codepoint — HDFC's card statements use `ITFRupee`,
+  map the symbol onto an ASCII codepoint. HDFC's card statements use `ITFRupee`,
   where the glyph drawn at `C` *is* `₹`. `words.py` restores it from the font,
   which is the only thing that knows. Do not "fix" this by treating a bare C
   before digits as currency: a reference number like `C123456` would silently
@@ -118,7 +118,7 @@ this project reads well.
 - **Date order is inferred per file, never configured.** `03/04` is undecidable
   alone and usually decidable across a statement: a component above twelve
   cannot be a month, and failing that, statements run forwards. This is the one
-  reading the reconciliation gate cannot check — dates play no part in the
+  reading the reconciliation gate cannot check: dates play no part in the
   arithmetic, so an American statement read day-first passes every check with
   every date below the twelfth silently wrong. A file that contradicts itself
   raises. A genuinely undecidable one is marked `assumed` on the certificate
