@@ -23,6 +23,18 @@ def dropped_row_path() -> Path:
 
 
 @pytest.fixture
+def unmasked_account_path() -> Path:
+    """HDFC's net-banking export shape: the account number printed in full.
+
+    Built from a real three-month statement that came back with no account on
+    its certificate at all, because the only pattern was for a number the bank
+    had masked itself. The narrations carry masked *card* numbers, which is why
+    the hint may only ever be read from the preamble.
+    """
+    return FIXTURES / "hdfc_unmasked_account.csv"
+
+
+@pytest.fixture
 def signed_amount_path() -> Path:
     return FIXTURES / "icici_may_2025_signed.csv"
 

@@ -45,6 +45,7 @@ jobs:
             hdfc_card_july_2025.csv
             hdfc_jan_may_2025.csv
             hdfc_july_2025.csv
+            hdfc_unmasked_account.csv
             hdfc_aug_2025.csv
             icici_aug_2025.csv
             icici_may_2025_signed.csv

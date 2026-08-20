@@ -11,7 +11,7 @@ reconciliation comes before categorisation; this file is how to work in it.
 - `moneytrail/parsers/words.py`: grid recovery for PDFs that draw no table
 - `moneytrail/web.py`: the hosted front-end's core, framework-free; `api.py` is
   the FastAPI layer and `static/index.html` the single page
-- `tests/`: 525 tests, run from the repo root
+- `tests/`: 529 tests, run from the repo root
 - `evals/`: `runner.py` and `questions.yaml` (the golden set), plus saved run JSON
 - `statements/`: sample inputs
 - `scripts/`: fixture builders
@@ -23,7 +23,7 @@ Run from the repo root. Python 3.11.
 
 ```bash
 pip install -e ".[dev]"     # pytest + pdfplumber + openpyxl + reportlab + pyyaml
-python -m pytest -q         # 525 tests
+python -m pytest -q         # 529 tests
 moneytrail --help           # console script, defined in pyproject.toml
 python -m moneytrail.api    # the hosted front-end on :8000, needs the web extra
 ```
@@ -182,6 +182,17 @@ this project reads well.
   the same name differ between Windows releases. With no such font the page spells
   `INR`, which is legible; a box is not, and a silently dropped currency mark on an
   Indian statement is worse than either.
+- **The account hint is read from the preamble only, and never printed in full.**
+  Two patterns, in order: a number the bank masked itself, then a number it
+  printed whole behind an `Account No :` label, which `mask_account` cuts to the
+  last four. HDFC's net-banking export uses the second form, which is why a real
+  three-month statement reconciled and still said `account -`. Widening the
+  search past the preamble is the obvious fix and is wrong: on that same file
+  every masked-looking string in the grid is a *card* number inside a narration
+  (`ATW-478119XXXXXX7204`, `IB BILLPAY DR-HDFCH1-...`), so a grid-wide search
+  names a card that has nothing to do with the account, on the one line of the
+  certificate that says what was checked. Reproducing the full number is equally
+  wrong: the certificate is made to be forwarded.
 - **An unverifiable parse is not a pass.** A card statement that prints no totals
   has no discrepancies precisely because nothing could be compared. `export.py`
   requires at least one check to have *run* before it stamps `RECONCILED`, and
