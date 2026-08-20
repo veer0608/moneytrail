@@ -15,9 +15,12 @@ services:
     region: singapore
     branch: main
 
-    # `formats` pulls pdfplumber and openpyxl. Without them the service starts
-    # and then rejects every PDF, which looks like a parser bug rather than a
-    # missing extra -- the worst kind of deploy fault to diagnose.
+    # `formats` pulls pdfplumber, openpyxl and reportlab. Without them the
+    # service starts and then rejects every PDF, which looks like a parser bug
+    # rather than a missing extra -- the worst kind of deploy fault to
+    # diagnose. reportlab is what draws the certificate as a page; without it
+    # the service works and quietly stops offering the one artefact anyone
+    # forwards to their accountant, which is the same fault wearing a hat.
     buildCommand: pip install -e ".[web,formats]"
 
     # Binds 0.0.0.0 and reads $PORT by itself; see the docstring on

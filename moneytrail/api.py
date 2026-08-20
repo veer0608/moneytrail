@@ -133,6 +133,7 @@ def create_app(
         password: str = Form("", description="Password for encrypted PDFs."),
         fmt: str = Form("xlsx", description="Workbook format if one is requested: xlsx or csv."),
         include_workbook: bool = Form(False, description="Return the export inline, base64."),
+        include_certificate: bool = Form(False, description="Return the certificate as a PDF, base64."),
     ):
         """Reconcile statements and return the ledger as data.
 
@@ -188,7 +189,11 @@ def create_app(
         except ValueError as error:
             return JSONResponse({"error": str(error)}, status_code=400)
 
-        payload = api_payload(result, include_workbook=include_workbook)
+        payload = api_payload(
+            result,
+            include_workbook=include_workbook,
+            include_certificate=include_certificate,
+        )
         payload["licence"] = {
             "licensed": entitlement.licensed,
             "problem": entitlement.problem,

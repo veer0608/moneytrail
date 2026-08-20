@@ -282,28 +282,35 @@ def _institution(statement: Statement | CardStatement) -> str:
     return statement.issuer if isinstance(statement, CardStatement) else statement.bank
 
 
-def render_certificates(certificates: Sequence[Certificate]) -> str:
-    """The full certificate document, headline verdict first."""
-    failed = [c for c in certificates if not c.reconciled]
-    stamped = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+def headline(certificates: Sequence[Certificate]) -> str:
+    """The one sentence that says whether this export can be trusted.
 
+    Lives here rather than inside a renderer because there are now three of
+    them -- text, workbook sheet and PDF page -- and a verdict worded three
+    slightly different ways is a verdict nobody quotes back to you.
+    """
+    failed = [c for c in certificates if not c.reconciled]
     if failed:
-        headline = (
+        return (
             f"NOT RECONCILED -- {len(failed)} of {len(certificates)} statement(s) "
             f"did not add up. The rows below may be an incomplete copy of the "
             f"source. Do not file this without reading the failures."
         )
-    else:
-        headline = (
-            f"RECONCILED -- all {len(certificates)} statement(s) add up to the "
-            f"paisa against the arithmetic the institution itself published."
-        )
+    return (
+        f"RECONCILED -- all {len(certificates)} statement(s) add up to the "
+        f"paisa against the arithmetic the institution itself published."
+    )
+
+
+def render_certificates(certificates: Sequence[Certificate]) -> str:
+    """The full certificate document, headline verdict first."""
+    stamped = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     lines = [
         "moneytrail reconciliation certificate",
         f"generated {stamped}",
         "",
-        headline,
+        headline(certificates),
         "",
     ]
     for certificate in certificates:

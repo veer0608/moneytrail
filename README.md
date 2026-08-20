@@ -86,6 +86,7 @@ local instead of cascading. That gives two distinguishable signatures:
 python -m moneytrail check path/to/statement.pdf
 python -m moneytrail check path/to/statement.csv
 python -m moneytrail check path/to/a/folder
+python -m moneytrail check statements/ --certificate certificate.pdf
 
 python -m moneytrail export statements/ --out ledger.xlsx
 
@@ -346,6 +347,28 @@ only the second survives being emailed around. An `.xlsx` export carries the
 certificate as a second sheet, because a proof that travels separately from the thing
 it proves gets detached on the first forward.
 
+### The certificate as a page
+
+```bash
+python -m moneytrail check statements/ --certificate certificate.pdf
+```
+
+The same proof, rendered for the person who will never open a terminal and will
+never look at the second tab of a workbook: one page, the verdict at the top,
+the institution's own arithmetic laid out so it can be added up by hand, the
+full digest, and every flagged row with its line number. Needs the
+`certificate` extra (`pip install 'moneytrail[certificate]'`); `--certificate`
+with any other suffix writes the plain text version and needs nothing.
+
+It computes nothing of its own. Every figure and every verdict on the page comes
+from the same `certify()` the terminal output uses, so there is no second
+opinion to drift.
+
+Where a system font carrying ₹ can be found it is embedded and *verified* to
+have the glyph before use -- reportlab's built-in Helvetica has no U+20B9 at all
+and draws a box. Failing that the page says `INR 1,23,456.78`, because a missing
+currency mark on an Indian statement is not a cosmetic problem.
+
 A statement that fails to reconcile is **still exported**. Withholding the data
 only sends you back to a converter that cannot tell you anything is wrong. It
 is written stamped instead: every row carries `reconciled = NO`, the certificate
@@ -370,7 +393,11 @@ pip install -e ".[web]"
 python -m moneytrail.api        # http://127.0.0.1:8000
 ```
 
-Drop statements on the page, get the trust strip and the workbook back. It exists
+Drop statements on the page, get the trust strip, the workbook and the
+certificate as a one-page PDF back. All three arrive in the same response and
+the browser saves them from memory: there is no download endpoint, because a
+download endpoint would need the file to still exist after the request that
+made it, and nothing here does. It exists
 because the people who most need the certificate, accountants reconciling a
 dozen client statements a month, will not `pip install` anything, and a promise
 nobody can reach is worth less than a weaker one they can.
