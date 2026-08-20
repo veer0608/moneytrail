@@ -143,6 +143,7 @@ class Result:
     content_type: str = ""
     data: bytes = b""
     _certificates: tuple[Certificate, ...] = field(default=(), repr=False)
+    _statements: tuple = field(default=(), repr=False)
 
     @property
     def reconciled(self) -> int:
@@ -399,6 +400,7 @@ def process(
         content_type=content_type,
         data=data,
         _certificates=tuple(certificates),
+        _statements=tuple(statements),
     )
 
 
@@ -407,3 +409,113 @@ def _reason(error: Exception) -> str:
     text = str(error)
     _, separator, tail = text.partition(": ")
     return (tail if separator else text) or "it could not be read"
+
+
+# --- the machine-readable shape ---------------------------------------------
+
+#: Amounts cross the API as an integer count of paise, never as a formatted
+#: string and never as a float. ``₹1,234.00`` is for a person to read; a
+#: caller that has to strip a currency mark and parse a decimal out of it will
+#: eventually do it with a float, and this project's one promise cannot survive
+#: that. The unit is named in every response so nobody has to guess.
+AMOUNTS_IN = "paise"
+CURRENCY = "INR"
+
+
+def _period(start, end) -> dict | None:
+    if not (start or end):
+        return None
+    return {
+        "start": start.isoformat() if start else None,
+        "end": end.isoformat() if end else None,
+    }
+
+
+def _statement_payload(certificate: Certificate) -> dict:
+    return {
+        "filename": Path(certificate.source).name,
+        "kind": certificate.kind,
+        "institution": certificate.institution or None,
+        "account": certificate.account_hint or None,
+        "period": _period(certificate.period_start, certificate.period_end),
+        "sha256": certificate.digest,
+        "transactions": certificate.transactions,
+        "reconciled": certificate.reconciled,
+        "checks": list(certificate.checks),
+        "caveats": list(certificate.caveats),
+        "failures": list(certificate.failures),
+        "dates_read_as": certificate.date_order,
+        "dates_observed": certificate.date_order_observed,
+        "totals": {
+            "opening": certificate.opening,
+            "credits": certificate.credits,
+            "debits": certificate.debits,
+            "computed_closing": certificate.computed_closing,
+            "stated_closing": certificate.stated_closing,
+        },
+    }
+
+
+def api_payload(result: "Result", *, include_workbook: bool = False) -> dict:
+    """The reconciliation as data, for a caller that is not a browser.
+
+    Deliberately not the shape the page uses. That one carries pre-formatted
+    rupee strings and a status word to colour a tile with, which is right for
+    rendering and wrong for anything that has to compute. This one carries
+    integers, ISO dates, and the discrepancies as structure rather than as
+    prose -- a pipeline should be able to branch on ``reconciled`` without
+    reading a sentence.
+    """
+    from .query import build_ledger
+
+    rows: list[dict] = []
+    if result._statements:
+        for row in build_ledger(result._statements).rows:
+            txn = row.transaction
+            rows.append(
+                {
+                    "date": txn.date.isoformat(),
+                    "value_date": txn.value_date.isoformat() if txn.value_date else None,
+                    "narration": txn.narration,
+                    "merchant": row.match.name,
+                    "category": row.match.category,
+                    "counterparty_type": row.match.kind.value,
+                    "direction": txn.direction.value,
+                    "amount": txn.amount,
+                    "balance": txn.balance,
+                    "source_file": Path(row.source).name,
+                    "row": txn.row,
+                    "page": txn.page,
+                    "on_card": row.on_card,
+                }
+            )
+
+    payload = {
+        "reconciled": result.ok,
+        "currency": CURRENCY,
+        "amounts_in": AMOUNTS_IN,
+        "counts": {
+            "statements": result.total,
+            "reconciled": result.reconciled,
+            "transactions": len(rows),
+            "rejected": len(result.rejected),
+        },
+        "statements": [_statement_payload(c) for c in result._certificates],
+        "rejected": [
+            {
+                "filename": item.filename,
+                "reason": item.reason,
+                "needs_password": item.needs_password,
+            }
+            for item in result.rejected
+        ],
+        "transactions": rows,
+        "certificate": result.certificate_text,
+    }
+    if include_workbook:
+        payload["workbook"] = {
+            "filename": result.filename,
+            "content_type": result.content_type,
+            "base64": base64.b64encode(result.data).decode("ascii"),
+        }
+    return payload

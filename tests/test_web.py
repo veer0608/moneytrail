@@ -442,3 +442,134 @@ def test_the_page_still_contains_no_absolute_url(client):
     assert "https://" not in body
     assert "src=" not in body
     assert "@import" not in body
+
+
+# --- the v1 API -------------------------------------------------------------
+
+
+@pytest.fixture
+def keyed_client():
+    """A client whose gate accepts one key, so auth can be exercised."""
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from moneytrail.api import create_app
+    from moneytrail.licence import Licences
+
+    def verify(product_id, key):
+        return (key == "GOOD", "" if key == "GOOD" else "that key is not valid")
+
+    return TestClient(create_app(licences=Licences("p", paid_files=25, verify=verify)))
+
+
+def post_v1(client, path, headers=None, **kwargs):
+    return client.post("/api/v1/reconcile", headers=headers or {}, **kwargs)
+
+
+def test_amounts_cross_the_api_as_integer_paise(client, clean_statement_path):
+    """Never a float, never a formatted string.
+
+    A caller handed "₹1,234.00" has to strip a currency mark and parse a
+    decimal, and will eventually do it with a float -- which is the one thing
+    this project's promise cannot survive. The unit is named in the response so
+    nobody has to guess which it is.
+    """
+    body = post_v1(
+        client, "/api/v1/reconcile",
+        files=[("files", ("s.csv", clean_statement_path.read_bytes()))],
+    ).json()
+
+    assert body["amounts_in"] == "paise"
+    assert body["currency"] == "INR"
+    row = body["transactions"][0]
+    assert isinstance(row["amount"], int)
+    assert isinstance(body["statements"][0]["totals"]["credits"], int)
+
+
+def test_the_api_shape_is_structured_not_prose(client, dropped_row_path):
+    """A pipeline branches on `reconciled`; it should not have to read English."""
+    response = post_v1(
+        client, "/api/v1/reconcile",
+        files=[("files", ("s.csv", dropped_row_path.read_bytes()))],
+    )
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["reconciled"] is False
+    assert body["statements"][0]["reconciled"] is False
+    assert body["statements"][0]["failures"]
+    assert body["counts"]["transactions"] == len(body["transactions"])
+
+
+def test_dates_are_iso(client, clean_statement_path):
+    body = post_v1(
+        client, "/api/v1/reconcile",
+        files=[("files", ("s.csv", clean_statement_path.read_bytes()))],
+    ).json()
+
+    assert body["transactions"][0]["date"].count("-") == 2
+    assert body["statements"][0]["period"]["start"].count("-") == 2
+
+
+def test_the_workbook_is_not_sent_unless_it_is_asked_for(client, clean_statement_path):
+    """Most callers want rows. Shipping a base64 workbook to all of them is
+    bytes nobody reads."""
+    blob = clean_statement_path.read_bytes()
+
+    without = post_v1(client, "/api/v1/reconcile", files=[("files", ("s.csv", blob))]).json()
+    with_it = post_v1(
+        client, "/api/v1/reconcile",
+        files=[("files", ("s.csv", blob))],
+        data={"include_workbook": "true"},
+    ).json()
+
+    assert "workbook" not in without
+    assert with_it["workbook"]["filename"] == "ledger.xlsx"
+    assert with_it["workbook"]["base64"]
+
+
+def test_a_bearer_token_unlocks_a_batch(keyed_client, clean_statement_path, july_bank_path):
+    files = [
+        ("files", ("a.csv", clean_statement_path.read_bytes())),
+        ("files", ("b.csv", july_bank_path.read_bytes())),
+    ]
+
+    refused = post_v1(keyed_client, "/api/v1/reconcile", files=files)
+    allowed = post_v1(
+        keyed_client, "/api/v1/reconcile",
+        headers={"Authorization": "Bearer GOOD"},
+        files=files,
+    )
+
+    assert refused.status_code == 402
+    assert allowed.status_code == 200
+    assert allowed.json()["licence"]["licensed"] is True
+
+
+def test_the_header_is_read_case_insensitively(keyed_client, clean_statement_path):
+    """`Bearer`, `bearer`, and the plain header all reach the same gate."""
+    blob = clean_statement_path.read_bytes()
+
+    for headers in (
+        {"Authorization": "bearer GOOD"},
+        {"Authorization": "BEARER GOOD"},
+        {"X-Moneytrail-Key": "GOOD"},
+    ):
+        body = post_v1(
+            keyed_client, "/api/v1/reconcile", headers=headers,
+            files=[("files", ("s.csv", blob))],
+        ).json()
+        assert body["licence"]["licensed"] is True, headers
+
+
+def test_the_api_is_documented(client):
+    """An API without documentation is not an API.
+
+    The interactive docs are off at the product surface and on under /api/v1,
+    which is the whole reversal: the page at / stays what a person meets first.
+    """
+    schema = client.get("/api/v1/openapi.json")
+
+    assert schema.status_code == 200
+    assert "/api/v1/reconcile" in schema.json()["paths"]
+    assert client.get("/api/v1/docs").status_code == 200

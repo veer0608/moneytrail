@@ -32,6 +32,7 @@ from .web import (
     SOURCE_URL,
     STATIC,
     RateLimit,
+    api_payload,
     client_key,
     process,
 )
@@ -49,11 +50,15 @@ def create_app(
     app = FastAPI(
         title="moneytrail",
         description="Bank statements to a ledger that proves it is all of it.",
-        # No interactive docs: this is a product surface, not an API console,
-        # and an upload endpoint with a try-it button invites statements from
-        # people who have not read what happens to them.
-        docs_url=None,
+        # The interactive docs are on, but only under /api/v1. They were off
+        # while this was a product surface and nothing else -- an upload
+        # endpoint with a try-it button invites statements from people who
+        # have not read what happens to them. An API without documentation is
+        # not an API, so the reversal is deliberate and scoped: the page at /
+        # stays the thing a person meets first.
+        docs_url="/api/v1/docs",
         redoc_url=None,
+        openapi_url="/api/v1/openapi.json",
     )
 
     @app.middleware("http")
@@ -107,6 +112,89 @@ def create_app(
     @app.get("/")
     def index():
         return FileResponse(STATIC / "index.html", media_type="text/html")
+
+    def licence_from(request: Request, form_value: str = "") -> str:
+        """The key, from the header a machine would send or the field the page does.
+
+        ``Authorization: Bearer <key>`` is what every other API takes and what
+        an integration will reach for first. The form field stays because the
+        browser has been sending it since before there was a v1, and breaking
+        the page to tidy the API would be the wrong trade.
+        """
+        header = request.headers.get("authorization", "")
+        if header.lower().startswith("bearer "):
+            return header[7:].strip()
+        return (request.headers.get("x-moneytrail-key") or form_value or "").strip()
+
+    @app.post("/api/v1/reconcile", tags=["v1"])
+    async def reconcile_v1(
+        request: Request,
+        files: list[UploadFile] = File(..., description="Statements: PDF, CSV, XLS or XLSX."),
+        password: str = Form("", description="Password for encrypted PDFs."),
+        fmt: str = Form("xlsx", description="Workbook format if one is requested: xlsx or csv."),
+        include_workbook: bool = Form(False, description="Return the export inline, base64."),
+    ):
+        """Reconcile statements and return the ledger as data.
+
+        Amounts are an integer count of paise -- never a float, never a
+        formatted string. Dates are ISO. ``reconciled`` is the field to branch
+        on; ``statements[].failures`` says why when it is false.
+
+        Authenticate with ``Authorization: Bearer <licence key>``. Without one
+        the free tier applies, which is one statement per request.
+        """
+        key = licence_from(request, "")
+        # Keyed on the licence where there is one: an integration behind a
+        # single egress address would otherwise share one budget with everyone
+        # else behind it, and a paying caller should not be throttled by a
+        # stranger's traffic.
+        who = key or client_key(
+            request.headers.get("x-forwarded-for"),
+            request.client.host if request.client else None,
+        )
+        if not budget.check(who):
+            return JSONResponse(
+                {"error": "too many requests -- wait a minute and retry"},
+                status_code=429,
+            )
+
+        declared = request.headers.get("content-length")
+        if declared and declared.isdigit() and int(declared) > MAX_BODY_BYTES:
+            return JSONResponse({"error": "that request is too large"}, status_code=413)
+
+        entitlement = gate.entitlement(key)
+        if len(files) > entitlement.files:
+            return JSONResponse(
+                {
+                    "error": (
+                        f"{len(files)} statements sent, {entitlement.files} allowed "
+                        f"per request"
+                    ),
+                    "needs_licence": not entitlement.licensed,
+                    "licence_problem": entitlement.problem,
+                    "buy_url": buy_url(),
+                },
+                status_code=402 if not entitlement.licensed else 413,
+            )
+
+        uploads = []
+        for upload in files:
+            uploads.append(
+                (upload.filename or "statement", await upload.read(MAX_FILE_BYTES + 1))
+            )
+
+        try:
+            result = process(uploads, password=password or None, fmt=fmt)
+        except ValueError as error:
+            return JSONResponse({"error": str(error)}, status_code=400)
+
+        payload = api_payload(result, include_workbook=include_workbook)
+        payload["licence"] = {
+            "licensed": entitlement.licensed,
+            "problem": entitlement.problem,
+            "statements_per_request": entitlement.files,
+        }
+        return JSONResponse(payload, status_code=200 if result.total else 422)
 
     @app.post("/api/export")
     async def export(

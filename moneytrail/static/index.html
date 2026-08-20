@@ -1,7 +1,7 @@
 <!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>moneytrail — a ledger that proves it is all of it</title>
+<title>moneytrail: a ledger that proves it is all of it</title>
 <meta name="description" content="Bank statements to Excel, with a certificate that says whether a row went missing. Every other converter can drop one silently.">
 <!--
   One file, no build step, no CDN, no analytics, no fonts fetched from anyone.
@@ -184,12 +184,12 @@
     <h1>Prove the spreadsheet is all of it.</h1>
     <p class="lede">
       Drop the CSV or Excel statement your net banking gives you. Get back one
-      merged ledger — and a certificate proving not a single row went missing.
+      merged ledger, and a certificate proving not a single row went missing.
     </p>
     <p class="sub">
       <strong>Every other converter can drop a row and stay quiet about it.</strong>
-      A wrapped narration, a page break, a total that lands in the wrong column —
-      and what you get back still looks like a perfectly good spreadsheet.
+      A wrapped narration, a page break, a total that lands in the wrong column.
+      What you get back still looks like a perfectly good spreadsheet.
     </p>
   </div>
 
@@ -229,7 +229,7 @@
     <p>
       Converting a statement is easy. Knowing the conversion was complete is
       the hard part, and it is the part nobody does. A dropped row does not
-      announce itself — it leaves a shorter file that balances against nothing,
+      announce itself. It leaves a shorter file that balances against nothing,
       and the first sign of trouble is a client asking why a payment is absent
       three months later.
     </p>
@@ -245,7 +245,7 @@
       <div>
         <h4>Two independent checks</h4>
         <p>The chain check finds where a fault is. The totals check finds
-           faults the chain cannot see — including rows lost off the end.</p>
+           faults the chain cannot see, including rows lost off the end.</p>
       </div>
       <div>
         <h4>Bound to the file, not the filename</h4>
@@ -268,7 +268,7 @@
       One workbook. Every transaction across every statement you dropped,
       merged in date order, with the raw narration kept beside the resolved
       merchant name so any row can still be found in the source PDF. Amounts
-      are exact decimals — summing the column is the first thing anyone does,
+      are exact decimals, because summing the column is the first thing anyone does
       and it has to match the certificate printed beside it.
     </p>
     <p>
@@ -289,7 +289,7 @@
           <tr>
             <td>Scanned or photographed statements</td>
             <td class="yes">Often, via OCR</td>
-            <td class="no">No — needs real text, and says so</td>
+            <td class="no">No. Needs real text, and says so</td>
           </tr>
           <tr>
             <td>Merges several statements</td>
@@ -326,7 +326,7 @@
       could not prove it either way, this is for you.
     </p>
     <p>
-      It is built for Indian formats — the lakh grouping, the <code>Cr</code>
+      It is built for Indian formats: the lakh grouping, the <code>Cr</code>
       and <code>Dr</code> suffixes, the separate withdrawal and deposit
       columns, the summary block bolted under the table, the
       password-locked PDFs banks email out. Card statements reconcile on a
@@ -335,7 +335,7 @@
     <p>
       <strong>Proven so far against real HDFC and ICICI files.</strong> The
       parsers work from the shape of a table rather than a list of banks, so
-      others are likely to work — but "likely" is the honest word, and it is
+      others are likely to work, but "likely" is the honest word, and it is
       worth knowing which one you are being given. If yours fails you will get
       an error naming the row, not a wrong answer. Send it over and it becomes
       a fix.
@@ -347,7 +347,7 @@
     <p>
       The certificate is free and always will be. It is the whole reason this
       exists, and putting it behind a paywall would leave the free tier as one
-      more silent converter. What costs money is <strong>volume</strong> — the
+      more silent converter. What costs money is <strong>volume</strong>: the
       part that saves a firm an afternoon.
     </p>
     <div class="price">
@@ -364,7 +364,7 @@
         </div>
         <div>
           <h4>Licensed</h4>
-          <p class="amount" id="price-amount">—</p>
+          <p class="amount" id="price-amount">See checkout</p>
           <p style="font-size:.9rem;margin:0">Batches, up to
             <span id="paid-files">25</span> statements at once.</p>
           <ul>
@@ -386,7 +386,7 @@
       There is no database, so a second visit cannot see the first one's file,
       and there is no account for anyone to breach. The spreadsheet comes back
       inside that same reply and is assembled by your browser rather than
-      fetched from a server — which is what keeps this side of it stateless.
+      fetched from a server, which is what keeps this side of it stateless.
     </p>
     <p>
       To be exact rather than reassuring: the parsers read files, not bytes in
@@ -406,25 +406,25 @@
     <dl class="faq">
       <dt>What if my statement does not reconcile?</dt>
       <dd>You still get the spreadsheet, stamped, with the row number and the
-        exact difference. Usually it means the parse missed something — send it
+        exact difference. Usually it means the parse missed something. Send it
         over and it gets fixed, because a format that fails is a bug here, not
         a bug in your bank.</dd>
 
       <dt>Which banks and formats does it read?</dt>
       <dd>The parsers work from the shape of the table rather than a list of
-        banks. <strong>CSV, XLS and XLSX exports are the solid path</strong> —
-        the kind you download from net banking — and HDFC and ICICI layouts are
+        banks. <strong>CSV, XLS and XLSX exports are the solid path</strong>,
+        the kind you download from net banking, and HDFC and ICICI layouts are
         both proven against real files.</dd>
 
       <dt>Does it handle PDF statements?</dt>
       <dd>Only partly, and it is worth being straight about which part.
         A PDF that draws ruling lines around its table reads fine. Many banks
         draw none, and print the narration wrapped across the lines above and
-        below the amounts — so a row is not a line, and that layout is not
+        below the amounts, so a row is not a line, and that layout is not
         read yet. If your PDF fails you will get an error rather than a wrong
         answer, which is the whole point of the thing, but it will still be an
         error. <strong>Export CSV or Excel from net banking if you can</strong>
-        — it is the better input regardless.</dd>
+        It is the better input regardless.</dd>
 
       <dt>Do you keep my licence key?</dt>
       <dd>It lives in your browser and travels with each upload to be checked.
@@ -546,7 +546,7 @@
     } else {
       // No price configured yet. Saying nothing beats inventing a number the
       // checkout will contradict.
-      amount.textContent = "—";
+      amount.textContent = "See checkout";
     }
     if (p.buy_url) {
       const slot = document.getElementById("buy-slot");
@@ -601,7 +601,7 @@
     if (result.total === 0) {
       // Nothing was read at all. Without this the counts are 0 and 0, "failed"
       // is not greater than zero, and it falls through to the green branch --
-      // which announced "Reconciled — all 0 add up to the paisa" over a file
+      // which announced "Reconciled: all 0 add up to the paisa" over a file
       // it had just refused. A reassuring verdict on no evidence is the exact
       // failure this whole tool exists to prevent, arriving in its own UI.
       cls = "failed";
@@ -612,16 +612,16 @@
                "The reason for each is below.";
     } else if (failed > 0) {
       cls = "failed";
-      headline = `Not reconciled — ${failed} of ${result.total} did not add up`;
+      headline = `Not reconciled: ${failed} of ${result.total} did not add up`;
       detail = "The spreadsheet may be an incomplete copy of the source. " +
                "Read the failures below before filing it anywhere.";
     } else if (weak > 0) {
       cls = "weak";
-      headline = `Reconciled — all ${result.total}, with ${weak} qualified`;
+      headline = `Reconciled: all ${result.total}, with ${weak} qualified`;
       detail = "These added up, but only against figures taken from their own " +
                "rows. Weaker than a clean pass. See the notes.";
     } else {
-      headline = `Reconciled — all ${result.total} add up to the paisa`;
+      headline = `Reconciled: all ${result.total} add up to the paisa`;
       detail = "Checked against arithmetic the bank itself published. " +
                "Nothing was dropped.";
     }
@@ -632,7 +632,7 @@
              <span class="name">${escape(r.filename)}</span>
              <span class="verdict">SKIPPED</span></header>
            <p class="meta">${escape(r.reason)}${
-             r.needs_password ? " — enter the password above and try again" : ""}</p>
+             r.needs_password ? ". Enter the password above and try again" : ""}</p>
            </article>`).join("")
       : "";
 
@@ -661,8 +661,8 @@
       input.files = dt.files;
       choose(dt.files);
       picked.textContent =
-        "sample statement, with one ₹649 row deliberately removed — " +
-        "the balances still look plausible";
+        "sample statement, with one ₹649 row deliberately removed. " +
+        "The balances still look plausible";
       go.click();
     } finally {
       demo.disabled = false;

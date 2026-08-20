@@ -252,7 +252,6 @@ def assemble(
     rows: list[RawRow] = []
     current: list[str] | None = None
     number = start
-    pending: list[str] = []
 
     lines = list(lines)
     pitch = line_pitch(lines)
@@ -275,13 +274,6 @@ def assemble(
                 rows.append(RawRow(number=number, cells=current, page=page))
                 number += 1
             current = cells
-            # Fragments printed above the first dated row belong to it: there
-            # is no earlier transaction for them to have come from.
-            if pending and narration_at is not None and not rows:
-                current[narration_at] = " ".join(
-                    pending + [current[narration_at]]
-                ).strip()
-            pending = []
             continue
 
         # A marker line, or a line set apart from the table, ends the
@@ -309,7 +301,6 @@ def assemble(
                 rows.append(RawRow(number=number, cells=current, page=page))
                 number += 1
                 current = None
-            pending = []
             # A marker is handed on, because the endpoints and summary blocks
             # it announces are read downstream. Detached prose is dropped
             # outright rather than passed along: a row with no date and no
@@ -322,9 +313,20 @@ def assemble(
             continue
 
         if current is None:
-            # Still above the first transaction -- hold the text, do not invent
-            # a row out of it.
-            pending.extend(part for part in cells if part)
+            # Above the first transaction on this page, so this is the layout
+            # talking, not a transaction. A wrapped narration belongs to a
+            # transaction and there is not one yet; what sits between a column
+            # header and the first dated row is a section label. HDFC prints
+            # the cardholder's name and CKYC id there, in the narration column,
+            # one line-height above the first row -- indistinguishable from a
+            # wrapped narration by spacing or by position, and identifiable
+            # only by being before anything it could belong to.
+            #
+            # Dropped rather than held. Attaching it made the first transaction
+            # of a real statement read "VEER ARORA [CKYC ID : ...] IGST-...",
+            # which is a person's name and identity number in a ledger row.
+            # Losing a narration fragment costs display; keeping this costs
+            # more, and never touches an amount either way.
             continue
 
         for index, value in enumerate(cells):

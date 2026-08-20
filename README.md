@@ -107,7 +107,7 @@ python -m pytest
 
 ## Status
 
-**Everything below is shipped.** 492 tests, CI green on 3.11 and 3.12.
+**Everything below is shipped.** 499 tests, CI green on 3.11 and 3.12.
 
 - **CSV / TSV / delimited-text** net-banking exports.
 - **PDF**, including the password-protected ones banks email you. Ruled tables

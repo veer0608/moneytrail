@@ -9,7 +9,7 @@ reconciliation comes before categorisation; this file is how to work in it.
 - `moneytrail/parsers/words.py` — grid recovery for PDFs that draw no table
 - `moneytrail/web.py` — the hosted front-end's core, framework-free; `api.py` is
   the FastAPI layer and `static/index.html` the single page
-- `tests/` — 492 tests, run from the repo root
+- `tests/` — 499 tests, run from the repo root
 - `evals/` — `runner.py` and `questions.yaml` (the golden set), plus saved run JSON
 - `statements/` — sample inputs
 - `scripts/` — fixture builders
@@ -21,7 +21,7 @@ Run from the repo root. Python 3.11.
 
 ```bash
 pip install -e ".[dev]"     # pytest + pdfplumber + openpyxl + reportlab + pyyaml
-python -m pytest -q         # 492 tests
+python -m pytest -q         # 499 tests
 moneytrail --help           # console script, defined in pyproject.toml
 python -m moneytrail.api    # the hosted front-end on :8000, needs the web extra
 ```
@@ -86,6 +86,17 @@ this project reads well.
   it did: five fixtures including both word-position PDFs sat unlisted while their
   unit tests passed, so that whole path could have broken with CI green. Adding a
   fixture means naming it in `ci.yml` or exempting it with a reason.
+- **The v1 API speaks integers.** `/api/v1/reconcile` returns amounts as a count
+  of paise and dates as ISO, never a formatted rupee string. A caller handed
+  "₹1,234.00" has to parse a decimal out of it and will eventually use a float,
+  which is the one thing this project's promise cannot survive. `amounts_in` names
+  the unit in every response. The page's own `/api/export` keeps its display shape;
+  do not merge the two.
+- **Text between a column header and the first dated row is dropped.** A wrapped
+  narration belongs to a transaction and there is not one yet, so what sits there
+  is a section label. HDFC prints the cardholder's name and CKYC id exactly there,
+  in the narration column, one line-height above the first row: attaching it put a
+  person's name and identity number into a ledger row.
 - **A summary box is not a table.** Its headings sit on one line and the figures
   on the next, aligned by position alone, so splitting it by the transaction
   table's columns puts every value in the wrong cell. `words.read_labelled_values`

@@ -210,18 +210,30 @@ def test_amounts_on_the_line_below_the_date_are_found():
     assert cells[column_map(columns)["balance"]] == "19,783.37"
 
 
-def test_text_above_the_first_transaction_is_not_made_into_a_row():
-    """Held, not invented: a phantom row would reconcile against a wrong total."""
+def test_text_above_the_first_transaction_is_dropped_not_attached():
+    """It is the layout talking, not a transaction.
+
+    A wrapped narration belongs to a transaction and there is not one yet;
+    what sits between a column header and the first dated row is a section
+    label. A real HDFC card statement prints the cardholder's name and CKYC id
+    exactly there -- in the narration column, one line-height above the first
+    row, indistinguishable from a wrapped narration by spacing or by position.
+    Attaching it made the first transaction read "VEER ARORA [CKYC ID : ...]
+    IGST-...", which is a person's name and identity number in a ledger row.
+
+    Never a row of its own either: a phantom row would reconcile against a
+    wrong total.
+    """
     columns = read_header(HDFC_HEADER)
     lines = [
-        [word("Amazon", 80, top=190), word("Pay", 120, top=190)],
+        [word("VEER", 80, top=190), word("ARORA", 120, top=190)],
         dated(200, "04/01/16", "POS", "100.00", "398.82"),
     ]
 
     rows = assemble(lines, columns)
 
     assert len(rows) == 1
-    assert "Amazon" in rows[0].cells[column_map(columns)["narration"]]
+    assert rows[0].cells[column_map(columns)["narration"]] == "POS"
 
 
 def test_a_closing_marker_ends_the_absorbing():
