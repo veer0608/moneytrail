@@ -12,7 +12,7 @@ import sys
 import webbrowser
 from pathlib import Path
 
-from .export import render_certificates, write as write_export
+from .export import certify, render_certificates, write as write_export
 from .insights import by_category, roll_up
 from .linking import find_transfers, link_card_repayments, summarise_spend
 from .models import CardStatement, Statement
@@ -92,10 +92,18 @@ def main(argv: list[str] | None = None) -> int:
         help="which API to use (default: whichever one has a key set)",
     )
 
-    subcommands.add_parser(
+    check = subcommands.add_parser(
         "check",
         parents=[common],
         help="parse statements and verify they reconcile to the paisa",
+    )
+    check.add_argument(
+        "--certificate",
+        type=Path,
+        help=(
+            "also write the certificate to this path. A .pdf suffix renders it "
+            "as a page to hand to somebody; anything else writes plain text"
+        ),
     )
     export = subcommands.add_parser(
         "export",
@@ -118,9 +126,9 @@ def main(argv: list[str] | None = None) -> int:
         "--certificate",
         type=Path,
         help=(
-            "where to write the certificate alongside a CSV export "
-            "(default: the export path with .certificate.txt). An .xlsx "
-            "export carries it as a second sheet, so this is not needed"
+            "where to write the certificate (default: the export path with "
+            ".certificate.txt, unless the export is .xlsx, which carries it as "
+            "a second sheet). A .pdf suffix renders it as a page"
         ),
     )
     merchants = subcommands.add_parser(
@@ -167,7 +175,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     prompt = not args.no_prompt
     if args.command == "check":
-        return _check(args.paths, args.password, prompt=prompt)
+        return _check(
+            args.paths, args.password, prompt=prompt, certificate=args.certificate
+        )
     if args.command == "export":
         return _export(
             args.paths,
@@ -337,12 +347,12 @@ def _export(
     print(f"  {rows} transactions from {len(statements)} statement(s)")
     print("  it contains your financial data -- keep it out of version control")
 
-    if out.suffix.lower() != ".xlsx":
-        proof = certificate or out.with_suffix(out.suffix + ".certificate.txt")
-        proof.write_text(render_certificates(certificates), encoding="utf-8")
-        print(f"wrote {proof.resolve()}")
-    else:
+    if certificate is None and out.suffix.lower() == ".xlsx":
         print("  the certificate is the second sheet of the workbook")
+    else:
+        proof = certificate or out.with_suffix(out.suffix + ".certificate.txt")
+        if not _write_certificate(certificates, proof):
+            return 2
 
     unreconciled = [c for c in certificates if not c.reconciled]
     print()
@@ -625,7 +635,11 @@ def _clip(text: str, width: int) -> str:
 
 
 def _check(
-    paths: list[Path], password: str | None = None, *, prompt: bool = True
+    paths: list[Path],
+    password: str | None = None,
+    *,
+    prompt: bool = True,
+    certificate: Path | None = None,
 ) -> int:
     targets = _expand(paths)
     if not targets:
@@ -634,11 +648,13 @@ def _check(
         return 2
 
     failures = 0
+    checked: list[Statement | CardStatement] = []
     for path in targets:
         statement = _load(path, password, prompt=prompt)
         if statement is None:
             failures += 1
             continue
+        checked.append(statement)
 
         if isinstance(statement, CardStatement):
             result = reconcile_card(statement)
@@ -656,7 +672,39 @@ def _check(
             failures += 1
 
     print(f"{len(targets) - failures}/{len(targets)} statements reconciled")
+
+    if certificate is not None and checked:
+        print()
+        if not _write_certificate([certify(s) for s in checked], certificate):
+            return 2
+
     return 1 if failures else 0
+
+
+def _write_certificate(certificates, path: Path) -> bool:
+    """Write the certificate to `path`, as a page or as text; False if it could not be.
+
+    The suffix picks the form, the same way it does for the export. A PDF is
+    the one worth handing to somebody who will not open a terminal, and it is
+    never gated on anything: the certificate is the argument for the product,
+    so it must not be the part that is missing.
+    """
+    if path.suffix.lower() == ".pdf":
+        try:
+            from .certificate import render_pdf
+
+            render_pdf(certificates, path)
+        except ImportError:
+            print(
+                "writing a .pdf certificate needs reportlab: "
+                "pip install 'moneytrail[certificate]'"
+            )
+            print("  or name a .txt path, which writes the same proof as text")
+            return False
+    else:
+        path.write_text(render_certificates(certificates), encoding="utf-8")
+    print(f"wrote {path.resolve()}")
+    return True
 
 
 def _load(

@@ -6,10 +6,12 @@ reconciliation comes before categorisation; this file is how to work in it.
 ## Layout
 
 - `moneytrail/`: the package (`cli.py`, `llm.py`, `export.py`, parsers, reconciliation)
+- `moneytrail/certificate.py`: the certificate rendered as a PDF page, the one
+  artefact that is meant to be forwarded to somebody
 - `moneytrail/parsers/words.py`: grid recovery for PDFs that draw no table
 - `moneytrail/web.py`: the hosted front-end's core, framework-free; `api.py` is
   the FastAPI layer and `static/index.html` the single page
-- `tests/`: 499 tests, run from the repo root
+- `tests/`: 525 tests, run from the repo root
 - `evals/`: `runner.py` and `questions.yaml` (the golden set), plus saved run JSON
 - `statements/`: sample inputs
 - `scripts/`: fixture builders
@@ -21,7 +23,7 @@ Run from the repo root. Python 3.11.
 
 ```bash
 pip install -e ".[dev]"     # pytest + pdfplumber + openpyxl + reportlab + pyyaml
-python -m pytest -q         # 499 tests
+python -m pytest -q         # 525 tests
 moneytrail --help           # console script, defined in pyproject.toml
 python -m moneytrail.api    # the hosted front-end on :8000, needs the web extra
 ```
@@ -30,7 +32,10 @@ python -m moneytrail.api    # the hosted front-end on :8000, needs the web extra
 
 `dependencies = []`. The core parses CSV and reconciles with **nothing installed**,
 and `llm.py` speaks HTTP over the standard library so `ask --model` works on a bare
-install. Everything else is an extra: `pdf`, `xlsx`, `formats`, `evals`, `web`, `dev`.
+install. Everything else is an extra: `pdf`, `xlsx`, `certificate`, `formats`,
+`evals`, `web`, `dev`. `pdf` and `certificate` are not the same tier and must not be
+merged: pdfplumber takes a statement apart, reportlab draws a page, and nobody
+exporting a CSV should install a rendering engine to do it.
 
 `web.py` holds the hosted front-end's reasoning and imports no framework; `api.py`
 is the only file that imports FastAPI. Keep it that way, and note that `api.py`
@@ -56,6 +61,11 @@ this project reads well.
   database, no logging of content, and no second request that could see them. Do
   not add storage, a queue, or a job id: each would break that sentence, and the
   sentence is the reason anyone would trust it over a converter that keeps files.
+  This is why both downloads -- the workbook and the certificate PDF -- ride home
+  base64 inside the response that produced them and are handed to the browser as
+  a Blob. A `/download/<id>` endpoint would be the obvious tidy-up and is exactly
+  the change that cannot be made: it requires the file to still exist after the
+  request that made it.
 - **The deterministic path is gated at 100%.** CI holds the regex parser at 100% on
   the questions it was built for, and never gates on a model.
 - **The PDF passes run most-informed first, and the order is load-bearing.**
@@ -140,6 +150,13 @@ this project reads well.
   mechanical is the point: "this page loads nothing from anywhere else" stays
   checkable by reading the file rather than by trusting whoever added the link.
   There is a test. Do not hardcode a URL to make something simpler.
+- **A missing renderer costs a button, never a reconciliation.** `certificate`
+  is an optional extra, so `web._certificate_pdf` absorbs `ImportError` and
+  returns no bytes; the page keys its download button off whether bytes arrived.
+  The absorption is scoped to `ImportError` deliberately -- anything else going
+  wrong while drawing the proof is a bug worth surfacing, not a button worth
+  quietly hiding. `render.yaml` installs `formats`, which carries reportlab, so
+  the hosted instance always has it.
 - **The certificate is never paywalled, and the gate never touches the CLI.**
   `licence.py` charges for volume -- one statement at a time free, batches with a
   key -- because the certificate is the whole argument for the product and a free
@@ -148,6 +165,23 @@ this project reads well.
   Gumroad answers `success: true` for a refunded purchase, so `read_gumroad` checks
   the refund, dispute, chargeback and subscription fields separately; treating
   success as "has paid" is the most expensive bug available in that file.
+- **The certificate renderers compute nothing.** `certificate.py` draws the page
+  and `export.py` writes the text and the workbook sheet, and all three read the
+  same `Certificate` from `certify()`. The one sentence that states the verdict
+  lives in `export.headline` for the same reason: three renderers wording it three
+  slightly different ways is a verdict nobody can quote back to you. If a renderer
+  ever needs to decide whether something reconciled, the decision is in the wrong
+  file. The single exception is deliberate and marked: the page colours the two
+  endpoints red when `computed_closing != stated_closing`, which is a comparison of
+  two recorded fields, and it is keyed on that rather than on the verdict because a
+  statement can fail its own stated column totals while the endpoints agree exactly.
+- **On the page, the rupee sign is a font problem, not a string problem.**
+  reportlab's built-in Helvetica has no glyph at U+20B9 and draws a box. A system
+  font is embedded when one can be found, and `_draws_rupee` checks the loaded face
+  actually maps the codepoint rather than trusting the filename -- font files under
+  the same name differ between Windows releases. With no such font the page spells
+  `INR`, which is legible; a box is not, and a silently dropped currency mark on an
+  Indian statement is worse than either.
 - **An unverifiable parse is not a pass.** A card statement that prints no totals
   has no discrepancies precisely because nothing could be compared. `export.py`
   requires at least one check to have *run* before it stamps `RECONCILED`, and

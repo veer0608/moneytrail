@@ -581,12 +581,15 @@
     </article>`;
   }
 
-  function download(result) {
-    const bytes = Uint8Array.from(atob(result.data), c => c.charCodeAt(0));
-    const url = URL.createObjectURL(new Blob([bytes], { type: result.content_type }));
+  // One saver for both downloads. The workbook and the certificate arrive the
+  // same way -- base64, inside the response that produced them -- because the
+  // server keeps nothing a second request could come back for.
+  function save(b64, filename, type) {
+    const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    const url = URL.createObjectURL(new Blob([bytes], { type }));
     const a = document.createElement("a");
     a.href = url;
-    a.download = result.filename;
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -641,13 +644,25 @@
       (result.total ? `<h2>Trust strip</h2>` + result.tiles.map(tileHtml).join("") : "") +
       rejected +
       (result.total
-        ? `<p style="margin-top:1.5rem"><button id="save">Download ${escape(result.filename)}</button></p>
+        ? `<p style="margin-top:1.5rem"><button id="save">Download ${escape(result.filename)}</button>` +
+          // Only offered when the server actually drew one: an instance
+          // without the renderer installed still has the certificate as text
+          // below, and a button that downloads nothing is worse than no button.
+          (result.certificate_pdf
+            ? ` <button id="save-page" class="ghost">Download ${escape(result.certificate_pdf_name)}</button>`
+            : "") +
+          `</p>
            <details><summary>Read the full certificate</summary>
              <pre>${escape(result.certificate)}</pre></details>`
         : "");
 
-    const save = document.getElementById("save");
-    if (save) save.addEventListener("click", () => download(result));
+    const workbook = document.getElementById("save");
+    if (workbook) workbook.addEventListener("click",
+      () => save(result.data, result.filename, result.content_type));
+
+    const page = document.getElementById("save-page");
+    if (page) page.addEventListener("click",
+      () => save(result.certificate_pdf, result.certificate_pdf_name, "application/pdf"));
   }
 
   // Nobody uploads a bank statement to a site they have not decided to trust

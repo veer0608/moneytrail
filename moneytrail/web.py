@@ -66,6 +66,10 @@ FORMATS = {
     "csv": ("ledger.csv", "text/csv"),
 }
 
+#: What the certificate is called when it leaves as a page. Fixed rather than
+#: derived from the upload: a batch has many source names and only one proof.
+CERTIFICATE_NAME = "certificate.pdf"
+
 STATIC = Path(__file__).parent / "static"
 
 #: Handed to the page at runtime rather than written into it. The served page
@@ -139,6 +143,10 @@ class Result:
     tiles: tuple[Tile, ...] = ()
     rejected: tuple[Rejected, ...] = ()
     certificate_text: str = ""
+    #: The same proof as a page. Empty when this instance has no renderer
+    #: installed, which is a missing extra rather than a failure -- the text
+    #: certificate is always there, and the page hides the button.
+    certificate_pdf: bytes = b""
     filename: str = ""
     content_type: str = ""
     data: bytes = b""
@@ -188,6 +196,11 @@ class Result:
                 for item in self.rejected
             ],
             "certificate": self.certificate_text,
+            # The page rides home in the same response as the workbook, for
+            # the same reason: there is no second request to serve because
+            # there is nothing kept between them.
+            "certificate_pdf": base64.b64encode(self.certificate_pdf).decode("ascii"),
+            "certificate_pdf_name": CERTIFICATE_NAME if self.certificate_pdf else "",
             "filename": self.filename,
             "content_type": self.content_type,
             # The file rides home inside the JSON so the browser can hand it
@@ -388,6 +401,7 @@ def process(
         out = root / wanted
         write_export(statements, out)
         data = out.read_bytes()
+        certificate_pdf = _certificate_pdf(certificates, root / CERTIFICATE_NAME)
 
     # Outside the `with`: the scratch directory and every uploaded byte in it
     # are gone by the time this returns, and only the export survives, in
@@ -396,12 +410,36 @@ def process(
         tiles=tiles,
         rejected=tuple(rejected),
         certificate_text=render_certificates(certificates),
+        certificate_pdf=certificate_pdf,
         filename=wanted,
         content_type=content_type,
         data=data,
         _certificates=tuple(certificates),
         _statements=tuple(statements),
     )
+
+
+def _certificate_pdf(certificates: Sequence[Certificate], out: Path) -> bytes:
+    """The certificate as a page, or nothing if this instance cannot draw one.
+
+    Rendered inside the scratch directory alongside the workbook, so it is
+    removed with everything else and only the bytes on their way to the
+    response survive.
+
+    A missing renderer must not cost anyone their reconciliation: `certificate`
+    is an optional extra, and an instance without it still returns the trust
+    strip, the workbook and the certificate as text. So the failure is absorbed
+    here rather than raised. It is scoped to ImportError on purpose -- anything
+    else going wrong while drawing the proof is a bug worth surfacing, not a
+    button worth quietly hiding.
+    """
+    try:
+        from .certificate import render_pdf
+
+        render_pdf(certificates, out)
+    except ImportError:
+        return b""
+    return out.read_bytes()
 
 
 def _reason(error: Exception) -> str:
@@ -456,7 +494,12 @@ def _statement_payload(certificate: Certificate) -> dict:
     }
 
 
-def api_payload(result: "Result", *, include_workbook: bool = False) -> dict:
+def api_payload(
+    result: "Result",
+    *,
+    include_workbook: bool = False,
+    include_certificate: bool = False,
+) -> dict:
     """The reconciliation as data, for a caller that is not a browser.
 
     Deliberately not the shape the page uses. That one carries pre-formatted
@@ -517,5 +560,11 @@ def api_payload(result: "Result", *, include_workbook: bool = False) -> dict:
             "filename": result.filename,
             "content_type": result.content_type,
             "base64": base64.b64encode(result.data).decode("ascii"),
+        }
+    if include_certificate and result.certificate_pdf:
+        payload["certificate_page"] = {
+            "filename": CERTIFICATE_NAME,
+            "content_type": "application/pdf",
+            "base64": base64.b64encode(result.certificate_pdf).decode("ascii"),
         }
     return payload
