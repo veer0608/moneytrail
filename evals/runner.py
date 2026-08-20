@@ -590,7 +590,10 @@ def main(argv: list[str] | None = None) -> int:
         "--gate",
         action="store_true",
         help=(
-            "CI mode: the built-in parser must stay at 100% query accuracy on "
+            # Doubled on purpose: argparse expands help through `help % params`
+            # to fill in things like %(default)s, so a lone % is read as a
+            # format spec. "100% query" made `--help` itself raise.
+            "CI mode: the built-in parser must stay at 100%% query accuracy on "
             "the questions it covers. Never gates on a model"
         ),
     )
