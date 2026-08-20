@@ -160,3 +160,57 @@ def test_zero_against_zero_is_not_quietly_made_into_a_movement():
     row = RawRow(number=1, cells=["0.00", "0.00"])
 
     assert _amounts(row, columns) == (0, 0)
+
+
+# --- which account the certificate names -----------------------------------
+
+
+def test_an_account_number_printed_in_full_is_masked_before_it_is_kept(
+    unmasked_account_path,
+):
+    """HDFC's net-banking export prints the number; the certificate must not.
+
+    A real three-month statement came back stamped RECONCILED with `account -`,
+    because the only pattern was for a number the bank had already masked. The
+    number is there, on a labelled row, in full. It is taken and cut down here:
+    a certificate exists to be forwarded, and reproducing the full number on it
+    would be a leak this tool had introduced.
+    """
+    statement = parse_statement(unmasked_account_path)
+
+    assert statement.account_hint == "XXXXXXXXXX6789"
+    assert "50100123456789" not in statement.account_hint
+
+
+def test_a_masked_number_is_preferred_over_one_this_tool_masks(clean_statement_path):
+    # The bank chose what to hide, and it is the form the holder recognises.
+    assert parse_statement(clean_statement_path).account_hint == "XXXXXXXX4471"
+
+
+def test_card_numbers_in_narrations_are_never_read_as_the_account(
+    unmasked_account_path,
+):
+    """The reason the search stays inside the preamble.
+
+    Real narrations are dense with masked card numbers: `ATW-478119XXXXXX7204`,
+    `IB BILLPAY DR-HDFCH1-451609XXXXXX3341`. Widening the search to the whole
+    grid would find one of those first and print it on the certificate as the
+    account that was checked, which is worse than printing nothing.
+    """
+    statement = parse_statement(unmasked_account_path)
+
+    assert "7204" not in statement.account_hint
+    assert "3341" not in statement.account_hint
+    # And the narrations themselves are untouched: this is a display rule for
+    # the hint, not a redaction pass over the ledger.
+    assert any("478119XXXXXX7204" in t.narration for t in statement.transactions)
+
+
+def test_labels_that_are_not_an_account_number_are_left_alone():
+    from moneytrail.parsers.base import find_account_hint
+
+    assert find_account_hint(["Cust ID :123456789"]) == ""
+    assert find_account_hint(["A/C Open Date :05/09/2019"]) == ""
+    assert find_account_hint(["RTGS/NEFT IFSC :HDFC0001234  MICR :464240002"]) == ""
+    assert find_account_hint(["*" * 60]) == ""
+    assert find_account_hint([]) == ""

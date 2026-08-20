@@ -53,6 +53,18 @@ def formats_for(order: "DateOrder") -> tuple[str, ...]:
 #: "*" is not a word character, so a boundary would never match the "****" form.
 ACCOUNT_HINT = re.compile(r"(?:[Xx]{2,}|\*{2,})\s?\d{3,6}\b")
 
+#: An account number the bank printed in full, e.g. "Account No :50100123456789".
+#: Matched only behind its own label. A bare run of digits on a statement is far
+#: more likely to be a reference or a cheque number, and that is not a guess
+#: worth making on a document made to be forwarded.
+ACCOUNT_LABELLED = re.compile(
+    r"\baccount\s*(?:no\.?|number|#)?\s*[:\-]\s*(\d{6,20})\b", re.IGNORECASE
+)
+
+#: How many digits of a full account number survive onto anything this tool
+#: writes. Four is what banks print themselves, and what a holder recognises.
+VISIBLE_DIGITS = 4
+
 #: Banks abbreviate freely -- "Closing Balance", "Closing Bal", "Bal C/F".
 _OPENING_NARRATIONS = re.compile(
     r"^(opening\s+bal(?:ance)?\.?|bal(?:ance)?\.?\s+b[/\s.]*f|b[/\s.]*f"
@@ -273,9 +285,41 @@ def is_summary_heading(text: str) -> bool:
     return bool(_SUMMARY_HEADING.match(text.strip()))
 
 
+def mask_account(number: str) -> str:
+    """A full account number cut down to the shape a bank prints itself."""
+    digits = "".join(character for character in number if character.isdigit())
+    if len(digits) <= VISIBLE_DIGITS:
+        return digits
+    return "X" * (len(digits) - VISIBLE_DIGITS) + digits[-VISIBLE_DIGITS:]
+
+
 def find_account_hint(lines: list[str]) -> str:
+    """Which account this statement covers, never in full.
+
+    Two passes, and the order is deliberate. A number the bank masked itself is
+    preferred: that is the form the holder recognises, and the bank chose what
+    to hide.
+
+    HDFC's net-banking export prints it in full instead, on a labelled row, which
+    is why a real three-month statement came back with no account on its
+    certificate at all. That number is taken, and masked here rather than
+    reproduced: a certificate is made to be forwarded, and a full account number
+    on a forwarded document would be a leak this tool had introduced.
+
+    Only the preamble is ever searched, and only behind a label. Real narrations
+    are dense with masked card numbers -- `ATW-...XXXXXX1234`, `IB BILLPAY
+    DR-HDFCH1-...`, `ME DC SI ...` -- so a hint scraped from the transaction
+    rows would confidently name a card that has nothing to do with the account,
+    on the one line of the certificate that says what was checked.
+    """
     for line in lines:
         match = ACCOUNT_HINT.search(line)
         if match:
             return match.group(0).replace(" ", "")
+
+    for line in lines:
+        match = ACCOUNT_LABELLED.search(line)
+        if match:
+            return mask_account(match.group(1))
+
     return ""
