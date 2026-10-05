@@ -347,6 +347,40 @@ only the second survives being emailed around. An `.xlsx` export carries the
 certificate as a second sheet, because a proof that travels separately from the thing
 it proves gets detached on the first forward.
 
+### Straight into Tally
+
+```bash
+python -m moneytrail export statements/ --out vouchers.xml --bank-ledger "HDFC Bank A/c"
+```
+
+A spreadsheet is one step short of where an Indian accountant needs the data,
+which is Tally. An `.xml` export writes Tally's own import format: a Payment
+voucher for every withdrawal and a Receipt voucher for every deposit, each
+posted between the bank ledger and a ledger called `Bank Statement Suspense`.
+Import it from Gateway of Tally > Import > Transactions. Needs nothing installed.
+
+Two choices in it are deliberate:
+
+- **Entries go to suspense, not to guessed expense ledgers.** Deciding that a
+  UPI payment was rent and not a loan repayment is the accountant's judgement.
+  A guess posted into a client's books looks exactly like a decision.
+- **The bank ledger is named, never created.** It already exists in the
+  company with an opening balance, and importing a master under the same name
+  can alter it. Pass its exact name with `--bank-ledger` (or the field on the
+  page). Left out, the name is guessed from the bank, and a wrong guess makes
+  Tally refuse the import and name the missing ledger. Nothing gets posted
+  anywhere it should not. The suspense ledger is the only master the file
+  creates, under a name chosen so it cannot collide with one the accountant
+  made.
+
+The certificate rides at the top of the file as a comment. Nobody reads XML
+before importing it, though, so the exit code and the red tile on the page are
+what actually stop a broken parse reaching somebody's books.
+
+**Not yet imported into a real Tally company.** It follows Tally's documented
+import schema and the tests check every voucher balances, but until a first
+import has been done, do it on a copy of the company.
+
 ### The certificate as a page
 
 ```bash

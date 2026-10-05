@@ -64,6 +64,7 @@ FORMATS = {
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ),
     "csv": ("ledger.csv", "text/csv"),
+    "tally": ("tally-vouchers.xml", "application/xml"),
 }
 
 #: What the certificate is called when it leaves as a page. Fixed rather than
@@ -335,6 +336,7 @@ def process(
     *,
     password: str | None = None,
     fmt: str = "xlsx",
+    bank_ledger: str | None = None,
 ) -> Result:
     """Parse, reconcile and export uploaded statements in one pass.
 
@@ -343,7 +345,7 @@ def process(
     lost to one locked PDF.
     """
     if fmt not in FORMATS:
-        raise ValueError(f"unknown format {fmt!r} -- use xlsx or csv")
+        raise ValueError(f"unknown format {fmt!r} -- use xlsx, csv or tally")
     if len(uploads) > MAX_FILES:
         raise ValueError(f"too many files at once -- the limit is {MAX_FILES}")
 
@@ -399,7 +401,7 @@ def process(
 
         wanted, content_type = FORMATS[fmt]
         out = root / wanted
-        write_export(statements, out)
+        write_export(statements, out, bank_ledger=bank_ledger)
         data = out.read_bytes()
         certificate_pdf = _certificate_pdf(certificates, root / CERTIFICATE_NAME)
 

@@ -131,7 +131,8 @@ def create_app(
         request: Request,
         files: list[UploadFile] = File(..., description="Statements: PDF, CSV, XLS or XLSX."),
         password: str = Form("", description="Password for encrypted PDFs."),
-        fmt: str = Form("xlsx", description="Workbook format if one is requested: xlsx or csv."),
+        fmt: str = Form("xlsx", description="Workbook format if one is requested: xlsx, csv, or tally (Tally XML vouchers)."),
+        bank_ledger: str = Form("", description="For fmt=tally: the bank ledger's name in Tally, exactly. Guessed from the bank when blank."),
         include_workbook: bool = Form(False, description="Return the export inline, base64."),
         include_certificate: bool = Form(False, description="Return the certificate as a PDF, base64."),
     ):
@@ -185,7 +186,12 @@ def create_app(
             )
 
         try:
-            result = process(uploads, password=password or None, fmt=fmt)
+            result = process(
+                uploads,
+                password=password or None,
+                fmt=fmt,
+                bank_ledger=bank_ledger or None,
+            )
         except ValueError as error:
             return JSONResponse({"error": str(error)}, status_code=400)
 
@@ -207,6 +213,7 @@ def create_app(
         files: list[UploadFile] = File(...),
         password: str = Form(""),
         fmt: str = Form("xlsx"),
+        bank_ledger: str = Form(""),
         licence: str = Form(""),
     ):
         who = client_key(
@@ -256,7 +263,12 @@ def create_app(
             uploads.append((upload.filename or "statement", blob))
 
         try:
-            result = process(uploads, password=password or None, fmt=fmt)
+            result = process(
+                uploads,
+                password=password or None,
+                fmt=fmt,
+                bank_ledger=bank_ledger or None,
+            )
         except ValueError as error:
             return JSONResponse({"error": str(error)}, status_code=400)
 

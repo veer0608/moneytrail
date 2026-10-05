@@ -118,8 +118,16 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         default=Path("moneytrail-ledger.csv"),
         help=(
-            "where to write it. The suffix picks the format: .csv or .xlsx "
-            "(default moneytrail-ledger.csv)"
+            "where to write it. The suffix picks the format: .csv, .xlsx, or "
+            ".xml for a Tally import file (default moneytrail-ledger.csv)"
+        ),
+    )
+    export.add_argument(
+        "--bank-ledger",
+        help=(
+            "for a Tally .xml export: the name of the bank ledger in Tally, "
+            "exactly as the company has it. Defaults to a guess from the bank's "
+            "name, which Tally will refuse if it does not match"
         ),
     )
     export.add_argument(
@@ -185,6 +193,7 @@ def main(argv: list[str] | None = None) -> int:
             prompt=prompt,
             out=args.out,
             certificate=args.certificate,
+            bank_ledger=args.bank_ledger,
         )
     if args.command == "merchants":
         return _merchants(
@@ -318,6 +327,7 @@ def _export(
     prompt: bool = True,
     out: Path = Path("moneytrail-ledger.csv"),
     certificate: Path | None = None,
+    bank_ledger: str | None = None,
 ) -> int:
     """Write the ledger out, and say plainly whether it can be trusted.
 
@@ -333,7 +343,7 @@ def _export(
         return 1
 
     try:
-        certificates = write_export(statements, out)
+        certificates = write_export(statements, out, bank_ledger=bank_ledger)
     except ValueError as error:
         print(str(error))
         return 2
@@ -346,6 +356,9 @@ def _export(
     print(f"wrote {out.resolve()}")
     print(f"  {rows} transactions from {len(statements)} statement(s)")
     print("  it contains your financial data -- keep it out of version control")
+    if out.suffix.lower() == ".xml":
+        print("  in Tally: Gateway of Tally > Import > Transactions, then pick this file")
+        print("  the bank ledger must already exist in the company under that exact name")
 
     if certificate is None and out.suffix.lower() == ".xlsx":
         print("  the certificate is the second sheet of the workbook")

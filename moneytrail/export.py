@@ -406,15 +406,26 @@ def _width(column: str) -> int:
 
 
 def write(
-    statements: Sequence[Statement | CardStatement], out: Path
+    statements: Sequence[Statement | CardStatement],
+    out: Path,
+    *,
+    bank_ledger: str | None = None,
 ) -> list[Certificate]:
-    """Export to whichever format ``out``'s suffix names."""
+    """Export to whichever format ``out``'s suffix names.
+
+    ``bank_ledger`` only means something to the Tally export, which posts
+    against a ledger by name; the spreadsheets have no ledgers to name.
+    """
     out = Path(out)
     suffix = out.suffix.lower()
     if suffix == ".xlsx":
         return export_xlsx(statements, out)
+    if suffix == ".xml":
+        from .tally import export_tally
+
+        return export_tally(statements, out, bank_ledger=bank_ledger)
     if suffix in {".csv", ".txt", ""}:
         return export_csv(statements, out)
     raise ValueError(
-        f"cannot export to {suffix!r} -- use .csv or .xlsx"
+        f"cannot export to {suffix!r} -- use .csv, .xlsx, or .xml for Tally"
     )
