@@ -5,13 +5,13 @@ reconciliation comes before categorisation; this file is how to work in it.
 
 ## Layout
 
-- `moneytrail/`: the package (`cli.py`, `llm.py`, `export.py`, parsers, reconciliation)
+- `moneytrail/`: the package (`cli.py`, `llm.py`, `export.py`, `tally.py`, parsers, reconciliation)
 - `moneytrail/certificate.py`: the certificate rendered as a PDF page, the one
   artefact that is meant to be forwarded to somebody
 - `moneytrail/parsers/words.py`: grid recovery for PDFs that draw no table
 - `moneytrail/web.py`: the hosted front-end's core, framework-free; `api.py` is
   the FastAPI layer and `static/index.html` the single page
-- `tests/`: 529 tests, run from the repo root
+- `tests/`: 546 tests, run from the repo root
 - `evals/`: `runner.py` and `questions.yaml` (the golden set), plus saved run JSON
 - `statements/`: sample inputs
 - `scripts/`: fixture builders
@@ -23,7 +23,7 @@ Run from the repo root. Python 3.11.
 
 ```bash
 pip install -e ".[dev]"     # pytest + pdfplumber + openpyxl + reportlab + pyyaml
-python -m pytest -q         # 529 tests
+python -m pytest -q         # 546 tests
 moneytrail --help           # console script, defined in pyproject.toml
 python -m moneytrail.api    # the hosted front-end on :8000, needs the web extra
 ```
@@ -193,6 +193,16 @@ this project reads well.
   names a card that has nothing to do with the account, on the one line of the
   certificate that says what was checked. Reproducing the full number is equally
   wrong: the certificate is made to be forwarded.
+- **The Tally export never creates or alters the bank ledger.** `tally.py`
+  names it and nothing more. It already exists in the client's company with an
+  opening balance, and a master of the same name in an import can alter it. A
+  wrong name is the safe failure: Tally refuses the vouchers and names the
+  missing ledger. The only master the file creates is the suspense ledger,
+  under a name (`Bank Statement Suspense`) chosen so it cannot collide. Entries
+  go to suspense rather than guessed expense ledgers for the same reason: a
+  guess posted into somebody's books is indistinguishable from a decision.
+  The format is built from Tally's documented schema and has **not yet been
+  imported into a real Tally company**; say so until it has.
 - **An unverifiable parse is not a pass.** A card statement that prints no totals
   has no discrepancies precisely because nothing could be compared. `export.py`
   requires at least one check to have *run* before it stamps `RECONCILED`, and

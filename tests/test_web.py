@@ -143,8 +143,17 @@ def test_csv_is_offered_as_well_as_excel(clean_statement_path):
     assert result.data.startswith(b"\xef\xbb\xbf")  # still opens right in Excel
 
 
+def test_tally_is_offered_and_posts_to_the_named_ledger(clean_statement_path):
+    result = process(
+        [upload(clean_statement_path)], fmt="tally", bank_ledger="HDFC Bank A/c"
+    )
+
+    assert result.filename == "tally-vouchers.xml"
+    assert b"<LEDGERNAME>HDFC Bank A/c</LEDGERNAME>" in result.data
+
+
 def test_an_unknown_format_is_refused(clean_statement_path):
-    with pytest.raises(ValueError, match="xlsx or csv"):
+    with pytest.raises(ValueError, match="unknown format"):
         process([upload(clean_statement_path)], fmt="pdf")
 
 

@@ -74,6 +74,7 @@
   .controls { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center;
               margin-top: 1.1rem; }
   label.inline, span.inline { font-size: .875rem; color: var(--muted); }
+  #ledger-field:not([hidden]) { display: inline-flex; gap: .75rem; align-items: center; }
   select, input[type=password], input[type=text] {
     font: inherit; font-size: .9rem; padding: .5rem .6rem; color: var(--ink);
     background: var(--card); border: 1px solid var(--line); border-radius: 8px;
@@ -206,7 +207,12 @@
     <select id="fmt">
       <option value="xlsx">Excel (.xlsx)</option>
       <option value="csv">CSV</option>
+      <option value="tally">Tally (.xml)</option>
     </select>
+    <span id="ledger-field" hidden>
+      <label class="inline" for="bank-ledger">Bank ledger in Tally</label>
+      <input id="bank-ledger" type="text" placeholder="e.g. HDFC Bank A/c" autocomplete="off">
+    </span>
     <label class="inline" for="password">PDF password</label>
     <input id="password" type="password" placeholder="only if locked" autocomplete="off">
     <button id="go" disabled>Reconcile</button>
@@ -358,7 +364,7 @@
           <p style="font-size:.9rem;margin:0">One statement at a time.</p>
           <ul>
             <li>Full reconciliation certificate</li>
-            <li>Excel or CSV export</li>
+            <li>Excel, CSV or Tally export</li>
             <li>No sign-up, no account</li>
           </ul>
         </div>
@@ -684,10 +690,19 @@
     }
   });
 
+  // Tally posts against a ledger by name, so that format asks for one. Left
+  // blank, the server guesses from the bank, and Tally refuses a wrong guess
+  // rather than posting anywhere.
+  const fmt = document.getElementById("fmt");
+  fmt.addEventListener("change", () => {
+    document.getElementById("ledger-field").hidden = fmt.value !== "tally";
+  });
+
   go.addEventListener("click", async () => {
     const body = new FormData();
     chosen.forEach(f => body.append("files", f));
     body.append("fmt", document.getElementById("fmt").value);
+    body.append("bank_ledger", document.getElementById("bank-ledger").value.trim());
     body.append("password", document.getElementById("password").value);
     body.append("licence", licence.value.trim());
 
